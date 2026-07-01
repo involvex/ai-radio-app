@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { ttsToBlob, VOICES } from "./lib/edge-tts-client";
+  import { loadSettings, saveSettings, generateScript, type AppSettings } from "./lib/settings";
+  import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 
   let topic = $state("");
   let link = $state("");
@@ -10,27 +13,25 @@
   let currentTime = $state(0);
   let duration = $state(0);
   let showHistory = $state(false);
+  let showSettings = $state(false);
   let history: Episode[] = $state([]);
+  let settings: AppSettings = $state(loadSettings());
+  let errorMessage = $state("");
 
-  interface Episode {
-    id: string;
-    title: string;
-    topic: string;
-    link?: string;
-    script: string;
-    audioUrl: string;
-    duration: number;
-    createdAt: Date;
-    isFavorite: boolean;
-  }
+  let apiKeyInput = $state(settings.apiKey);
+  let selectedProvider = $state(settings.apiProvider);
+  let selectedVoice = $state(settings.defaultVoice);
 
   onMount(async () => {
+    settings = loadSettings();
+    apiKeyInput = settings.apiKey;
+    selectedProvider = settings.apiProvider;
+    selectedVoice = settings.defaultVoice;
     await loadHistory();
   });
 
   async function loadHistory() {
     try {
-      const { getAllEpisodes } = await import("./lib/db");
       history = await getAllEpisodes();
     } catch (e) {
       console.error("Failed to load history:", e);
@@ -40,30 +41,40 @@
   async function tuneIn() {
     if (!topic.trim()) return;
     isGenerating = true;
+    errorMessage = "";
     currentScript = "";
 
     try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, link: link || undefined }),
-      });
+      const script = await generateScript(topic, settings);
+      currentScript = script;
 
-      if (!response.ok) throw new Error("Generation failed");
-
-      const data = await response.json();
-      currentScript = data.script;
+      const audioBlob = await ttsToBlob(script, { voice: selectedVoice });
+      const audioUrl = URL.createObjectURL(audioBlob);
 
       if (audioElement) {
-        audioElement.src = data.audioUrl;
-        await audioElement.play();
-        isPlaying = true;
+        audioElement.src = audioUrl;
+        if (settings.autoPlay) {
+          await audioElement.play();
+          isPlaying = true;
+        }
       }
 
+      const episode = {
+        title: topic.slice(0, 50) + (topic.length > 50 ? "..." : ""),
+        topic,
+        link: link || undefined,
+        script,
+        audioUrl,
+        duration: audioElement?.duration || 0,
+        createdAt: new Date(),
+        isFavorite: false,
+      };
+
+      await saveEpisode(episode);
       await loadHistory();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error:", e);
-      alert("Fehler bei der Generierung");
+      errorMessage = `Fehler: ${e.message || "Generation failed"}`;
     } finally {
       isGenerating = false;
     }
@@ -80,6 +91,7 @@
   }
 
   function formatTime(seconds: number): string {
+    if (!seconds || !isFinite(seconds)) return "00:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
@@ -99,7 +111,7 @@
 
   async function playEpisode(episode: Episode) {
     currentScript = episode.script;
-    if (audioElement) {
+    if (audioElement && episode.audioUrl) {
       audioElement.src = episode.audioUrl;
       await audioElement.play();
       isPlaying = true;
@@ -109,8 +121,7 @@
 
   async function deleteEpisode(id: string) {
     try {
-      const { deleteEpisode: del } = await import("./lib/db");
-      await del(id);
+      await dbDeleteEpisode(id);
       await loadHistory();
     } catch (e) {
       console.error("Failed to delete:", e);
@@ -119,12 +130,38 @@
 
   async function toggleFavorite(episode: Episode) {
     try {
-      const { toggleFavorite: toggle } = await import("./lib/db");
-      await toggle(episode.id, !episode.isFavorite);
+      await dbToggleFavorite(episode.id, !episode.isFavorite);
       await loadHistory();
     } catch (e) {
       console.error("Failed to toggle favorite:", e);
     }
+  }
+
+  function openSettings() {
+    apiKeyInput = settings.apiKey;
+    selectedProvider = settings.apiProvider;
+    selectedVoice = settings.defaultVoice;
+    showSettings = true;
+  }
+
+  function closeSettings() {
+    showSettings = false;
+  }
+
+  function saveSettingsAndClose() {
+    settings = {
+      ...settings,
+      apiKey: apiKeyInput,
+      apiProvider: selectedProvider,
+      defaultVoice: selectedVoice,
+    };
+    saveSettings(settings);
+    showSettings = false;
+  }
+
+  function clearApiKey() {
+    apiKeyInput = "";
+    selectedProvider = "none";
   }
 </script>
 
@@ -133,10 +170,22 @@
 <main class="terminal">
   <header class="header">
     <h1>📡 AI_RADIO_v1.0.0</h1>
-    <span class="status-indicator">{isGenerating ? "GENERATING..." : "READY"}</span>
+    <div class="header-actions">
+      <button class="icon-btn" onclick={openSettings} title="Settings">⚙</button>
+      <span class="status-indicator">
+        {isGenerating ? "GENERATING..." : "READY"}
+        {#if settings.apiProvider === "none"}
+          <span class="badge">OFFLINE</span>
+        {/if}
+      </span>
+    </div>
   </header>
 
   <div class="content">
+    {#if errorMessage}
+      <div class="error-banner">{errorMessage}</div>
+    {/if}
+
     <div class="input-group">
       <label for="topic">> TOPIC:</label>
       <input
@@ -195,7 +244,7 @@
           <div class="progress-bar">
             <div
               class="progress-fill"
-              style="width: {(currentTime / duration) * 100}%"
+              style="width: {duration ? (currentTime / duration) * 100 : 0}%"
             ></div>
           </div>
           <span class="time">{formatTime(duration)}</span>
@@ -203,7 +252,7 @@
       </div>
 
       <div class="script-preview">
-        <p>{currentScript.slice(0, 200)}...</p>
+        <p>{currentScript.slice(0, 300)}{currentScript.length > 300 ? "..." : ""}</p>
       </div>
     {/if}
   </div>
@@ -234,11 +283,94 @@
                 <button onclick={() => toggleFavorite(episode)}>
                   [{episode.isFavorite ? "⭐" : "☆"}]
                 </button>
-                <button onclick={() => deleteEpisode(episode.id)}>[ 🗑 ]</button>
+                <button onclick={() => deleteEpisode(episode.id!)}>[ 🗑 ]</button>
               </div>
             </div>
           {/each}
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if showSettings}
+    <div class="settings-overlay" onclick={closeSettings}>
+      <div class="settings-panel" onclick={(e) => e.stopPropagation()}>
+        <div class="settings-header">
+          <h2>═══ SETTINGS ═══</h2>
+          <button onclick={closeSettings}>[ ✕ ]</button>
+        </div>
+
+        <div class="settings-content">
+          <div class="settings-section">
+            <h3>LLM API (Optional)</h3>
+            <p class="hint">Kostenlose APIs: Kilo, OpenCode, Gemini</p>
+
+            <div class="api-providers">
+              <label class="provider-option">
+                <input type="radio" bind:group={selectedProvider} value="none" />
+                <span>Keine API (Fallback)</span>
+              </label>
+              <label class="provider-option">
+                <input type="radio" bind:group={selectedProvider} value="kilo" />
+                <span>Kilo Gateway (empfohlen)</span>
+              </label>
+              <label class="provider-option">
+                <input type="radio" bind:group={selectedProvider} value="opencode" />
+                <span>OpenCode AI</span>
+              </label>
+              <label class="provider-option">
+                <input type="radio" bind:group={selectedProvider} value="gemini" />
+                <span>Google Gemini</span>
+              </label>
+            </div>
+
+            <div class="input-group">
+              <label for="apiKey">API Key:</label>
+              <input
+                id="apiKey"
+                type="password"
+                bind:value={apiKeyInput}
+                placeholder="Enter API key..."
+              />
+            </div>
+
+            {#if selectedProvider === 'none'}
+              <p class="hint warning">
+                ⚠️ Ohne API wird ein einfacher Fallback-Text generiert.
+              </p>
+            {/if}
+          </div>
+
+          <div class="settings-section">
+            <h3>Stimme</h3>
+            <div class="voice-select">
+              <select bind:value={selectedVoice}>
+                <optgroup label="Deutsch">
+                  {#each VOICES.german as voice}
+                    <option value={voice.id}>{voice.name} ({voice.gender})</option>
+                  {/each}
+                </optgroup>
+                <optgroup label="English">
+                  {#each VOICES.english as voice}
+                    <option value={voice.id}>{voice.name} ({voice.gender})</option>
+                  {/each}
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <label class="checkbox-option">
+              <input type="checkbox" bind:checked={settings.autoPlay} />
+              <span>Automatisch abspielen</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-footer">
+          <button class="btn-secondary" onclick={clearApiKey}>API Key löschen</button>
+          <button class="btn-primary" onclick={saveSettingsAndClose}>[ SPEICHERN ]</button>
+        </div>
       </div>
     </div>
   {/if}
@@ -257,6 +389,7 @@
     background: #0a0a0a;
     color: #00ff41;
     min-height: 100vh;
+    margin: 0;
   }
 
   .scanlines {
@@ -299,8 +432,47 @@
     text-shadow: 0 0 10px #00ff41;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .icon-btn {
+    background: none;
+    border: 1px solid #003311;
+    color: #00ff41;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 1.2rem;
+  }
+
+  .icon-btn:hover {
+    background: #003311;
+  }
+
   .status-indicator {
     color: #00aa2a;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .badge {
+    background: #003311;
+    color: #00ff41;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.625rem;
+    border-radius: 2px;
+  }
+
+  .error-banner {
+    background: #330000;
+    border: 1px solid #ff3333;
+    color: #ff3333;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
     font-size: 0.875rem;
   }
 
@@ -372,10 +544,6 @@
   .btn-primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: #003311;
   }
 
   .player-section {
@@ -527,5 +695,131 @@
 
   .episode-actions button:hover {
     text-shadow: 0 0 10px #00ff41;
+  }
+
+  .settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .settings-panel {
+    background: #0a0a0a;
+    border: 2px solid #003311;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #003311;
+  }
+
+  .settings-header h2 {
+    font-size: 1rem;
+  }
+
+  .settings-header button {
+    background: none;
+    border: none;
+    color: #00ff41;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .settings-content {
+    padding: 1rem;
+  }
+
+  .settings-section {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed #003311;
+  }
+
+  .settings-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+
+  .settings-section h3 {
+    font-size: 0.875rem;
+    color: #00ff41;
+    margin-bottom: 0.75rem;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: #00aa2a;
+    margin-bottom: 0.75rem;
+  }
+
+  .hint.warning {
+    color: #ffaa00;
+  }
+
+  .api-providers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .provider-option, .checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+
+  .provider-option input, .checkbox-option input {
+    accent-color: #00ff41;
+  }
+
+  .voice-select select {
+    width: 100%;
+    background: #111111;
+    border: 1px solid #003311;
+    color: #00ff41;
+    padding: 0.5rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .voice-select select:focus {
+    border-color: #00ff41;
+    outline: none;
+  }
+
+  .settings-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem;
+    border-top: 1px solid #003311;
+  }
+
+  .settings-footer .btn-primary {
+    background: #00ff41;
+    color: #0a0a0a;
+  }
+
+  @media (max-width: 600px) {
+    .history-panel {
+      width: 100%;
+    }
   }
 </style>

@@ -143,3 +143,5 @@ vite.config.ts.timestamp-*
 .vite/
 src-tauri/target
 src-tauri/.fingerprint
+
+*.apk

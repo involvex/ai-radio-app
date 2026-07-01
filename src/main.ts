@@ -1,8 +1,9 @@
-import App from "./App.svelte";
 import { mount } from "svelte";
+import App from "./App.svelte";
 
-const app = mount(App, {
-  target: document.getElementById("app")!,
-});
+const target = document.getElementById("app");
+if (!target) {
+  throw new Error("No #app element found");
+}
 
-export default app;
+mount(App, { target });
