@@ -1,6 +1,6 @@
 const baseUrl = `speech.platform.bing.com/consumer/speech/synthesize/readaloud`;
-const token = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-const webSocketURL = `wss://${baseUrl}/edge/v1?TrustedClientToken=${token}`;
+const EDGE_TTS_TOKEN =
+  import.meta.env.VITE_EDGE_TTS_TOKEN || "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 
 function uuid() {
   return crypto.randomUUID().replaceAll("-", "");
@@ -13,7 +13,58 @@ export type TtsOptions = Partial<{
   pitch: string;
 }>;
 
-export async function tts(
+function getVoiceLang(voice: string): string {
+  if (voice.startsWith("de-")) return "de-DE";
+  if (voice.startsWith("en-")) return "en-US";
+  return "en-US";
+}
+
+export async function ttsWebSpeech(
+  text: string,
+  options: TtsOptions = {},
+): Promise<void> {
+  const {
+    voice = "de-DE-KillianNeural",
+    rate = "+0%",
+    pitch = "+0Hz",
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    if (!window.speechSynthesis) {
+      reject(new Error("SpeechSynthesis not available"));
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    const lang = getVoiceLang(voice);
+    utterance.lang = lang;
+
+    const rateNum = parseFloat(rate.replace("%", "")) / 100 + 1;
+    utterance.rate = Math.max(0.1, Math.min(10, rateNum));
+
+    const pitchNum = parseFloat(pitch.replace("Hz", ""));
+    utterance.pitch = Math.max(0, Math.min(2, isNaN(pitchNum) ? 1 : pitchNum));
+
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) =>
+      v.lang.startsWith(lang.split("-")[0]),
+    );
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+    }
+
+    utterance.onend = () => resolve();
+    utterance.onerror = (event) =>
+      reject(new Error(`Speech synthesis failed: ${event.error}`));
+
+    window.speechSynthesis.speak(utterance);
+  });
+}
+
+async function ttsEdge(
   text: string,
   options: TtsOptions = {},
 ): Promise<ArrayBuffer> {
@@ -24,83 +75,134 @@ export async function tts(
     pitch = "+0Hz",
   } = options;
 
+  const lang = getVoiceLang(voice);
+  const wsUrl = `wss://${baseUrl}/edge/v1?TrustedClientToken=${EDGE_TTS_TOKEN}&ConnectionId=${uuid()}`;
+
   return new Promise<ArrayBuffer>((resolve, reject) => {
-    const ws = new WebSocket(`${webSocketURL}&ConnectionId=${uuid()}`);
-    ws.binaryType = "arraybuffer";
-    const audioData: ArrayBuffer[] = [];
+    let ws: WebSocket;
+    let closed = false;
+    const audioData: Uint8Array[] = [];
 
-    ws.onmessage = (event) => {
-      if (typeof event.data === "string") {
-        if (event.data.includes("turn.end")) {
-          ws.close();
+    const cleanup = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+
+    const timeout = setTimeout(() => {
+      closed = true;
+      cleanup();
+      reject(new Error("TTS request timeout"));
+    }, 30000);
+
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = "arraybuffer";
+
+      ws.onmessage = (event) => {
+        if (closed) return;
+
+        if (typeof event.data === "string") {
+          if (event.data.includes("turn.end")) {
+            clearTimeout(timeout);
+            closed = true;
+            cleanup();
+          }
+          return;
         }
-        return;
-      }
 
-      const data = event.data as ArrayBuffer;
-      const separator = "Path:audio\r\n";
-      const separatorBytes = new TextEncoder().encode(separator);
-      const dataBytes = new Uint8Array(data);
-      const separatorIndex = findSequenceIndex(dataBytes, separatorBytes);
+        const data = new Uint8Array(event.data as ArrayBuffer);
+        const separator = new TextEncoder().encode("Path:audio\r\n");
+        const idx = findSequenceIndex(data, separator);
 
-      if (separatorIndex !== -1) {
-        const audioContent = dataBytes.slice(
-          separatorIndex + separatorBytes.length,
-        );
-        audioData.push(audioContent.buffer);
-      }
-    };
+        if (idx !== -1) {
+          const audioContent = data.slice(idx + separator.length);
+          audioData.push(audioContent);
+        }
+      };
 
-    ws.onerror = (error) => {
-      reject(error);
-    };
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        if (!closed) {
+          closed = true;
+          reject(new Error("WebSocket connection failed"));
+        }
+      };
 
-    ws.onopen = () => {
-      const speechConfig = JSON.stringify({
-        context: {
-          synthesis: {
-            audio: {
-              metadataoptions: {
-                sentenceBoundaryEnabled: false,
-                wordBoundaryEnabled: false,
+      ws.onclose = () => {
+        clearTimeout(timeout);
+        if (closed) return;
+        closed = true;
+
+        if (audioData.length > 0) {
+          const totalLength = audioData.reduce(
+            (sum, buf) => sum + buf.length,
+            0,
+          );
+          const result = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const buf of audioData) {
+            result.set(buf, offset);
+            offset += buf.length;
+          }
+          resolve(result.buffer);
+        } else {
+          reject(new Error("No audio data received"));
+        }
+      };
+
+      ws.onopen = () => {
+        const speechConfig = JSON.stringify({
+          context: {
+            synthesis: {
+              audio: {
+                metadataoptions: {
+                  sentenceBoundaryEnabled: false,
+                  wordBoundaryEnabled: false,
+                },
+                outputFormat: "audio-24khz-48kbitrate-mono-mp3",
               },
-              outputFormat: "audio-24khz-48kbitrate-mono-mp3",
             },
           },
-        },
-      });
+        });
 
-      const configMessage = `X-Timestamp:${Date()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n${speechConfig}`;
-      ws.send(configMessage);
+        const configMessage = `X-Timestamp:${new Date().toISOString()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n${speechConfig}`;
+        ws.send(configMessage);
 
-      const ssmlMessage =
-        `X-RequestId:${uuid()}\r\nContent-Type:application/ssml+xml\r\n` +
-        `X-Timestamp:${Date()}Z\r\nPath:ssml\r\n\r\n` +
-        `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
-        `<voice name='${voice}'><prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
-        `${text}</prosody></voice></speak>`;
+        const ssmlMessage =
+          `X-RequestId:${uuid()}\r\nContent-Type:application/ssml+xml\r\n` +
+          `X-Timestamp:${new Date().toISOString()}Z\r\nPath:ssml\r\n\r\n` +
+          `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${lang}'>` +
+          `<voice name='${voice}'><prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
+          `${text}</prosody></voice></speak>`;
 
-      ws.send(ssmlMessage);
-    };
-
-    ws.onclose = () => {
-      if (audioData.length > 0) {
-        const totalLength = audioData.reduce(
-          (sum, buf) => sum + buf.byteLength,
-          0,
-        );
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const buf of audioData) {
-          result.set(new Uint8Array(buf), offset);
-          offset += buf.byteLength;
-        }
-        resolve(result.buffer);
-      } else {
-        reject(new Error("No audio data received"));
-      }
-    };
+        ws.send(ssmlMessage);
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      reject(err);
+    }
   });
+}
+
+export async function tts(
+  text: string,
+  options: TtsOptions = {},
+): Promise<ArrayBuffer> {
+  return ttsEdge(text, options);
+}
+
+export async function ttsToBlob(
+  text: string,
+  options?: TtsOptions,
+): Promise<Blob> {
+  try {
+    const buffer = await ttsEdge(text, options);
+    return new Blob([buffer], { type: "audio/mp3" });
+  } catch {
+    await ttsWebSpeech(text, options);
+    return new Blob([], { type: "audio/mp3" });
+  }
 }
 
 function findSequenceIndex(data: Uint8Array, sequence: Uint8Array): number {
@@ -115,14 +217,6 @@ function findSequenceIndex(data: Uint8Array, sequence: Uint8Array): number {
     if (found) return i;
   }
   return -1;
-}
-
-export async function ttsToBlob(
-  text: string,
-  options?: TtsOptions,
-): Promise<Blob> {
-  const buffer = await tts(text, options);
-  return new Blob([buffer], { type: "audio/mp3" });
 }
 
 export const VOICES = {

@@ -2,7 +2,13 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte({
+      compilerOptions: {
+        hydratable: false,
+      },
+    }),
+  ],
   clearScreen: false,
   server: {
     port: 1420,
@@ -15,5 +21,14 @@ export default defineConfig({
   build: {
     target: "esnext",
     minify: "esbuild",
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true,
+      },
+    },
+  },
+  resolve: {
+    conditions: ["browser", "import"],
+    mainFields: ["module", "jsnext:main", "jsnext"],
   },
 });
