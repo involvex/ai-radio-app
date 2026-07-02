@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -10,6 +11,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            #[cfg(desktop)]
             setup_tray(app)?;
             Ok(())
         })
@@ -17,6 +19,7 @@ fn main() {
         .expect("error while running tauri application");
 }
 
+#[cfg(desktop)]
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Fenster anzeigen", true, None::<&str>)?;

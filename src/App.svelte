@@ -3,6 +3,7 @@
   import { ttsToBlob, VOICES } from "./lib/edge-tts-client";
   import { loadSettings, saveSettings, generateScript, type AppSettings } from "./lib/settings";
   import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
+  import { exportData, downloadSyncFile, importData } from "./lib/sync";
 
   let topic = $state("");
   let link = $state("");
@@ -17,10 +18,13 @@
   let history: Episode[] = $state([]);
   let settings: AppSettings = $state(loadSettings());
   let errorMessage = $state("");
+  let syncMessage = $state("");
+  let isSyncing = $state(false);
 
   let apiKeyInput = $state(settings.apiKey);
   let selectedProvider = $state(settings.apiProvider);
   let selectedVoice = $state(settings.defaultVoice);
+  let fileInput: HTMLInputElement | null = $state(null);
 
   onMount(async () => {
     settings = loadSettings();
@@ -163,6 +167,48 @@
     apiKeyInput = "";
     selectedProvider = "none";
   }
+
+  async function handleExport() {
+    try {
+      isSyncing = true;
+      syncMessage = "Exportiere Daten...";
+      const data = await exportData();
+      downloadSyncFile(data);
+      syncMessage = `Export erfolgreich! ${data.episodes.length} Episoden exportiert.`;
+    } catch (e: any) {
+      syncMessage = `Export fehlgeschlagen: ${e.message}`;
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  function triggerImport() {
+    if (fileInput) {
+      fileInput.click();
+    }
+  }
+
+  async function handleFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    try {
+      isSyncing = true;
+      syncMessage = "Importiere Daten...";
+      const result = await importData(file);
+      syncMessage = `Import erfolgreich! ${result.episodesImported} Episoden importiert.`;
+      if (result.settingsImported) {
+        settings = loadSettings();
+      }
+      await loadHistory();
+    } catch (e: any) {
+      syncMessage = `Import fehlgeschlagen: ${e.message}`;
+    } finally {
+      isSyncing = false;
+      if (fileInput) fileInput.value = "";
+    }
+  }
 </script>
 
 <div class="scanlines"></div>
@@ -293,8 +339,8 @@
   {/if}
 
   {#if showSettings}
-    <div class="settings-overlay" onclick={closeSettings}>
-      <div class="settings-panel" onclick={(e) => e.stopPropagation()}>
+    <div class="settings-overlay" onclick={closeSettings} role="dialog" aria-modal="true">
+      <div class="settings-panel" onclick={(e) => e.stopPropagation()} role="document">
         <div class="settings-header">
           <h2>═══ SETTINGS ═══</h2>
           <button onclick={closeSettings}>[ ✕ ]</button>
@@ -364,6 +410,34 @@
               <input type="checkbox" bind:checked={settings.autoPlay} />
               <span>Automatisch abspielen</span>
             </label>
+          </div>
+
+          <div class="settings-section">
+            <h3>Sync (Geräteübergreifend)</h3>
+            <p class="hint">Exportiere deine Daten als JSON-Datei, um sie auf einem anderen Gerät zu importieren.</p>
+
+            <input
+              type="file"
+              accept=".json"
+              bind:this={fileInput}
+              onchange={handleFileSelect}
+              style="display: none;"
+            />
+
+            <div class="sync-buttons">
+              <button class="btn-secondary" onclick={handleExport} disabled={isSyncing}>
+                [ 📤 EXPORT ]
+              </button>
+              <button class="btn-secondary" onclick={triggerImport} disabled={isSyncing}>
+                [ 📥 IMPORT ]
+              </button>
+            </div>
+
+            {#if syncMessage}
+              <p class="sync-message" class:error={syncMessage.includes("fehl") || syncMessage.includes("Fehler")}>
+                {syncMessage}
+              </p>
+            {/if}
           </div>
         </div>
 
@@ -821,5 +895,31 @@
     .history-panel {
       width: 100%;
     }
+  }
+
+  .sync-buttons {
+    display: flex;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+
+  .sync-buttons .btn-secondary {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .sync-message {
+    font-size: 0.75rem;
+    color: #00ff41;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #111111;
+    border: 1px solid #003311;
+  }
+
+  .sync-message.error {
+    color: #ff3333;
+    border-color: #330000;
   }
 </style>
