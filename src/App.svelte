@@ -4,6 +4,7 @@
   import { loadSettings, saveSettings, generateScript, type AppSettings } from "./lib/settings";
   import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
   import { exportData, downloadSyncFile, importData } from "./lib/sync";
+  import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
 
   let topic = $state("");
   let link = $state("");
@@ -15,6 +16,7 @@
   let duration = $state(0);
   let showHistory = $state(false);
   let showSettings = $state(false);
+  let showTopicSuggestions = $state(false);
   let history: Episode[] = $state([]);
   let settings: AppSettings = $state(loadSettings());
   let errorMessage = $state("");
@@ -25,6 +27,8 @@
   let selectedProvider = $state(settings.apiProvider);
   let selectedVoice = $state(settings.defaultVoice);
   let fileInput: HTMLInputElement | null = $state(null);
+
+  const categories = getCategories();
 
   onMount(async () => {
     settings = loadSettings();
@@ -168,6 +172,16 @@
     selectedProvider = "none";
   }
 
+  function getRandomTopicFromCategory(categoryId: string) {
+    topic = getRandomTopicByCategory(categoryId as keyof typeof import("./lib/topics").TOPICS);
+    showTopicSuggestions = false;
+  }
+
+  function getRandomTopicHandler() {
+    topic = getRandomTopic();
+    showTopicSuggestions = false;
+  }
+
   async function handleExport() {
     try {
       isSyncing = true;
@@ -234,13 +248,34 @@
 
     <div class="input-group">
       <label for="topic">> TOPIC:</label>
-      <input
-        id="topic"
-        type="text"
-        bind:value={topic}
-        placeholder="Enter topic or paste link..."
-        disabled={isGenerating}
-      />
+      <div class="topic-input-row">
+        <input
+          id="topic"
+          type="text"
+          bind:value={topic}
+          placeholder="Enter topic or paste link..."
+          disabled={isGenerating}
+        />
+        <button
+          class="btn-dice"
+          onclick={() => showTopicSuggestions = !showTopicSuggestions}
+          title="Topic vorschlagen"
+        >🎲</button>
+      </div>
+
+      {#if showTopicSuggestions}
+        <div class="topic-suggestions">
+          <div class="suggestions-header">
+            <span>Wähle eine Kategorie:</span>
+            <button class="btn-random" onclick={getRandomTopicHandler}>🎲 Zufälliges Thema</button>
+          </div>
+          {#each categories as cat}
+            <button class="category-btn" onclick={() => getRandomTopicFromCategory(cat.id)}>
+              {cat.name}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <div class="input-group">
@@ -921,5 +956,83 @@
   .sync-message.error {
     color: #ff3333;
     border-color: #330000;
+  }
+
+  .topic-input-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .topic-input-row input {
+    flex: 1;
+  }
+
+  .btn-dice {
+    background: #003311;
+    border: 1px solid #00ff41;
+    color: #00ff41;
+    padding: 0.75rem 1rem;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-dice:hover {
+    background: #00ff41;
+    color: #0a0a0a;
+    box-shadow: 0 0 15px rgba(0, 255, 65, 0.4);
+  }
+
+  .topic-suggestions {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background: #111111;
+    border: 1px solid #003311;
+  }
+
+  .suggestions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .suggestions-header span {
+    color: #00aa2a;
+    font-size: 0.875rem;
+  }
+
+  .btn-random {
+    background: #003311;
+    border: 1px solid #00ff41;
+    color: #00ff41;
+    padding: 0.5rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .btn-random:hover {
+    background: #00ff41;
+    color: #0a0a0a;
+  }
+
+  .category-btn {
+    background: #0a0a0a;
+    border: 1px dashed #003311;
+    color: #00ff41;
+    padding: 0.5rem 1rem;
+    margin: 0.25rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .category-btn:hover {
+    border-style: solid;
+    background: #003311;
   }
 </style>
