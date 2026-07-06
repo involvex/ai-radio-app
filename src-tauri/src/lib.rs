@@ -60,7 +60,7 @@ mod desktop {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .setup(|_app| {
+        .setup(|app| {
             #[cfg(desktop)]
             {
                 desktop::setup_tray(app)?;
