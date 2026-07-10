@@ -193,9 +193,29 @@ export async function ttsToBlob(
 	try {
 		const buffer = await ttsEdge(text, options)
 		return new Blob([buffer], {type: 'audio/mp3'})
-	} catch {
-		await ttsWebSpeech(text, options)
-		return new Blob([], {type: 'audio/mp3'})
+	} catch (edgeError) {
+		console.error('Edge TTS failed:', edgeError)
+		if (!window.speechSynthesis) {
+			throw new Error(
+				`TTS unavailable on this platform (Edge TTS failed: ${
+					edgeError instanceof Error ? edgeError.message : 'unknown error'
+				})`,
+				{cause: edgeError},
+			)
+		}
+		try {
+			await ttsWebSpeech(text, options)
+			return new Blob([], {type: 'audio/mp3'})
+		} catch (webError) {
+			throw new Error(
+				`TTS failed. Edge: ${
+					edgeError instanceof Error ? edgeError.message : 'unknown'
+				}; Fallback: ${
+					webError instanceof Error ? webError.message : 'unknown'
+				}`,
+				{cause: webError},
+			)
+		}
 	}
 }
 
