@@ -66,10 +66,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(builder
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(desktop)]
             {
-                desktop::setup_tray(app)?;
+                desktop::setup_tray(_app)?;
             }
 
             Ok(())
