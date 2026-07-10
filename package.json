@@ -1,45 +1,46 @@
 {
-  "name": "ai-radio",
-  "author": "involvex",
-  "private": true,
-  "repository": {
-    "url": "git+https://github.com/involvex/ai-radio-app.git",
-    "type": "git"
-  },
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "format": "prettier . --write",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
-    "check": "bun run format && bun run lint:fix && bun run typecheck",
-    "prebuild": "bun run check"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@involvex/prettier-config": "^0.0.5",
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
-    "@tauri-apps/cli": "^2.0.0",
-    "@tsconfig/svelte": "^5.0.4",
-    "eslint": "^10.6.0",
-    "globals": "^17.7.0",
-    "jiti": "^2.7.0",
-    "prettier": "^3.9.4",
-    "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
-    "typescript": "^5.5.0",
-    "typescript-eslint": "^8.62.1",
-    "vite": "^6.0.0"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-shell": "^2.0.0",
-    "cheerio": "^1.0.0",
-    "dexie": "^4.0.10"
-  }
+	"name": "ai-radio",
+	"version": "1.0.0",
+	"private": true,
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/involvex/ai-radio-app.git"
+	},
+	"author": "involvex",
+	"type": "module",
+	"scripts": {
+		"prebuild": "bun run check",
+		"build": "vite build",
+		"check": "bun run format && bun run lint:fix && bun run typecheck",
+		"dev": "vite",
+		"format": "prettier . --write",
+		"lint": "eslint src",
+		"lint:fix": "eslint src --fix",
+		"preview": "vite preview",
+		"tauri": "tauri",
+		"typecheck": "tsc --noEmit"
+	},
+	"prettier": "@involvex/prettier-config",
+	"dependencies": {
+		"@tauri-apps/api": "^2.0.0",
+		"@tauri-apps/plugin-shell": "^2.0.0",
+		"cheerio": "^1.0.0",
+		"dexie": "^4.0.10"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@involvex/prettier-config": "^0.0.5",
+		"@sveltejs/vite-plugin-svelte": "^4.0.0",
+		"@tauri-apps/cli": "^2.0.0",
+		"@tsconfig/svelte": "^5.0.4",
+		"eslint": "^10.6.0",
+		"globals": "^17.7.0",
+		"jiti": "^2.7.0",
+		"prettier": "^3.9.4",
+		"svelte": "^5.0.0",
+		"svelte-check": "^4.0.0",
+		"typescript": "^5.5.0",
+		"typescript-eslint": "^8.62.1",
+		"vite": "^6.0.0"
+	}
 }

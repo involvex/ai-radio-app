@@ -67,66 +67,66 @@ Ein simpler Bun-Server, der den Link entgegennimmt und verarbeitet.
 
 ```typescript
 // server.ts
-import { serve } from "bun";
+import {serve} from 'bun'
 
 serve({
-  port: 3000,
-  async fetch(req) {
-    const url = new URL(req.url);
-    if (url.pathname === "/api/generate" && req.method === "POST") {
-      const { topic, link } = await req.json();
+	port: 3000,
+	async fetch(req) {
+		const url = new URL(req.url)
+		if (url.pathname === '/api/generate' && req.method === 'POST') {
+			const {topic, link} = await req.json()
 
-      // 1. Scrape content if link exists
-      let context = topic;
-      if (link) {
-        const html = await fetch(link).then((res) => res.text());
-        // Hier simplen Regex/JSDOM Parser nutzen, um Main-Text zu extrahieren
-        context += `\nInhalt des Links:\n${extractMainText(html)}`;
-      }
+			// 1. Scrape content if link exists
+			let context = topic
+			if (link) {
+				const html = await fetch(link).then(res => res.text())
+				// Hier simplen Regex/JSDOM Parser nutzen, um Main-Text zu extrahieren
+				context += `\nInhalt des Links:\n${extractMainText(html)}`
+			}
 
-      // 2. Call Gemini for Native Audio Output
-      const audioBuffer = await generateRadioAudio(context);
+			// 2. Call Gemini for Native Audio Output
+			const audioBuffer = await generateRadioAudio(context)
 
-      return new Response(audioBuffer, {
-        headers: { "Content-Type": "audio/mp3" },
-      });
-    }
-    return new Response("Not Found", { status: 404 });
-  },
-});
+			return new Response(audioBuffer, {
+				headers: {'Content-Type': 'audio/mp3'},
+			})
+		}
+		return new Response('Not Found', {status: 404})
+	},
+})
 ```
 
 ### Schritt 2: Audio-Generierung via Gemini API Studio
 
 ```typescript
 async function generateRadioAudio(context: string): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+	const apiKey = process.env.GEMINI_API_KEY
+	const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        { parts: [{ text: `Verwandle das in ein Radioskript: ${context}` }] },
-      ],
-      generationConfig: {
-        // Fordert direkt Audio statt Text an (falls im SDK/Beta für deinen Key freigeschaltet)
-        responseMimeType: "audio/mp3",
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
-        },
-      },
-      systemInstruction: {
-        parts: [{ text: "Du bist Radio-Moderator. Sprich locker und kurz." }],
-      },
-    }),
-  });
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({
+			contents: [
+				{parts: [{text: `Verwandle das in ein Radioskript: ${context}`}]},
+			],
+			generationConfig: {
+				// Fordert direkt Audio statt Text an (falls im SDK/Beta für deinen Key freigeschaltet)
+				responseMimeType: 'audio/mp3',
+				speechConfig: {
+					voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Puck'}},
+				},
+			},
+			systemInstruction: {
+				parts: [{text: 'Du bist Radio-Moderator. Sprich locker und kurz.'}],
+			},
+		}),
+	})
 
-  const json = await response.json();
-  // Extrahiere Base64 Audio aus dem Response-Objekt und konvertiere in Buffer
-  const base64Audio = json.candidates[0].content.parts[0].inlineData.data;
-  return Buffer.from(base64Audio, "base64");
+	const json = await response.json()
+	// Extrahiere Base64 Audio aus dem Response-Objekt und konvertiere in Buffer
+	const base64Audio = json.candidates[0].content.parts[0].inlineData.data
+	return Buffer.from(base64Audio, 'base64')
 }
 ```
 
@@ -137,48 +137,48 @@ Da du Terminal-Style und Dark-Mode bevorzugst, halten wir das Interface extrem m
 ```html
 <!-- index.html (PWA / Capacitor Basis) -->
 <div
-  class="bg-black text-green-500 font-mono min-h-screen p-6 flex flex-col justify-between"
+	class="bg-black text-green-500 font-mono min-h-screen p-6 flex flex-col justify-between"
 >
-  <header class="border-b border-green-800 pb-2">
-    <h1 class="text-xl font-bold">📡 AI_RADIO_v1.0.0</h1>
-  </header>
+	<header class="border-b border-green-800 pb-2">
+		<h1 class="text-xl font-bold">📡 AI_RADIO_v1.0.0</h1>
+	</header>
 
-  <main
-    class="flex-1 flex flex-col justify-center max-w-xl mx-auto w-full gap-4"
-  >
-    <input
-      id="topic"
-      type="text"
-      placeholder="Enter Topic..."
-      class="bg-zinc-900 border border-green-800 p-3 text-green-400 focus:outline-none focus:border-green-500"
-    />
-    <input
-      id="link"
-      type="url"
-      placeholder="Paste Link (optional)..."
-      class="bg-zinc-900 border border-green-800 p-3 text-green-400 focus:outline-none focus:border-green-500"
-    />
+	<main
+		class="flex-1 flex flex-col justify-center max-w-xl mx-auto w-full gap-4"
+	>
+		<input
+			id="topic"
+			type="text"
+			placeholder="Enter Topic..."
+			class="bg-zinc-900 border border-green-800 p-3 text-green-400 focus:outline-none focus:border-green-500"
+		/>
+		<input
+			id="link"
+			type="url"
+			placeholder="Paste Link (optional)..."
+			class="bg-zinc-900 border border-green-800 p-3 text-green-400 focus:outline-none focus:border-green-500"
+		/>
 
-    <button
-      onclick="tuneIn()"
-      class="bg-green-900 hover:bg-green-800 text-white p-3 font-bold transition-all"
-    >
-      [ TUNE IN ]
-    </button>
+		<button
+			onclick="tuneIn()"
+			class="bg-green-900 hover:bg-green-800 text-white p-3 font-bold transition-all"
+		>
+			[ TUNE IN ]
+		</button>
 
-    <!-- Simple Custom Audio UI -->
-    <div
-      id="player"
-      class="hidden border border-zinc-800 p-4 bg-zinc-950 mt-4 text-center"
-    >
-      <div class="animate-pulse text-xs mb-2">NOW STREAMING AI PODCAST...</div>
-      <audio
-        id="audioElement"
-        controls
-        class="w-full invert opacity-80"
-      ></audio>
-    </div>
-  </main>
+		<!-- Simple Custom Audio UI -->
+		<div
+			id="player"
+			class="hidden border border-zinc-800 p-4 bg-zinc-950 mt-4 text-center"
+		>
+			<div class="animate-pulse text-xs mb-2">NOW STREAMING AI PODCAST...</div>
+			<audio
+				id="audioElement"
+				controls
+				class="w-full invert opacity-80"
+			></audio>
+		</div>
+	</main>
 </div>
 ```
 
