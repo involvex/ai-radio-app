@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::time::Duration;
+
 #[cfg(desktop)]
 mod desktop {
     use tauri::{
@@ -66,6 +68,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(builder
+        .invoke_handler(tauri::generate_handler![tts_http_fallback])
         .setup(|_app| {
             #[cfg(desktop)]
             {
@@ -75,4 +78,66 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         })
         .run(tauri::generate_context!())?)
+}
+
+#[tauri::command]
+async fn tts_http_fallback(
+    text: String,
+    voice: String,
+) -> Result<Vec<u8>, String> {
+    let lang = if voice.starts_with("de-") {
+        "de-DE"
+    } else if voice.starts_with("en-") {
+        "en-US"
+    } else {
+        "en-US"
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut full_audio = Vec::new();
+    let chunk_size = 200usize;
+    let chars: Vec<char> = text.chars().collect();
+
+    for i in (0..chars.len()).step_by(chunk_size) {
+        let end = std::cmp::min(i + chunk_size, chars.len());
+        let chunk: String = chars[i..end].iter().cloned().collect();
+
+        let params = [
+            ("ie", "UTF-8"),
+            ("client", "tw-ob"),
+            ("tl", lang),
+            ("q", &chunk),
+        ];
+
+        let response = client
+            .get("https://translate.google.com/translate_tts")
+            .query(&params)
+            .send()
+            .await
+            .map_err(|e| format!("TTS request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "TTS HTTP error: {} (chunk {}/{})",
+                response.status(),
+                (i / chunk_size) + 1,
+                (chars.len() / chunk_size) + 1
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read audio: {}", e))?
+            .to_vec();
+
+        full_audio.extend_from_slice(&bytes);
+    }
+
+    Ok(full_audio)
 }

@@ -186,6 +186,18 @@ export async function tts(
 	return ttsEdge(text, options)
 }
 
+export async function ttsHttpFallback(
+	text: string,
+	voice: string,
+): Promise<Blob> {
+	const {invoke} = await import('@tauri-apps/api/core')
+	const result = await invoke<number[]>('tts_http_fallback', {
+		text,
+		voice,
+	})
+	return new Blob([new Uint8Array(result)], {type: 'audio/mp3'})
+}
+
 export async function ttsToBlob(
 	text: string,
 	options?: TtsOptions,
@@ -195,26 +207,23 @@ export async function ttsToBlob(
 		return new Blob([buffer], {type: 'audio/mp3'})
 	} catch (edgeError) {
 		console.error('Edge TTS failed:', edgeError)
-		if (!window.speechSynthesis) {
-			throw new Error(
-				`TTS unavailable on this platform (Edge TTS failed: ${
-					edgeError instanceof Error ? edgeError.message : 'unknown error'
-				})`,
-				{cause: edgeError},
-			)
-		}
 		try {
+			const {voice = 'de-DE-KillianNeural'} = options || {}
+			return await ttsHttpFallback(text, voice)
+		} catch (httpError) {
+			console.error('HTTP TTS fallback failed:', httpError)
+			if (!window.speechSynthesis) {
+				throw new Error(
+					`TTS unavailable (Edge: ${
+						edgeError instanceof Error ? edgeError.message : 'unknown error'
+					}; HTTP: ${
+						httpError instanceof Error ? httpError.message : 'unknown error'
+					})`,
+					{cause: httpError},
+				)
+			}
 			await ttsWebSpeech(text, options)
 			return new Blob([], {type: 'audio/mp3'})
-		} catch (webError) {
-			throw new Error(
-				`TTS failed. Edge: ${
-					edgeError instanceof Error ? edgeError.message : 'unknown'
-				}; Fallback: ${
-					webError instanceof Error ? webError.message : 'unknown'
-				}`,
-				{cause: webError},
-			)
 		}
 	}
 }
