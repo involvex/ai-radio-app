@@ -24,10 +24,17 @@ import { fetchLinkContent } from "./lib/scraper";
   let syncMessage = $state("");
   let isSyncing = $state(false);
 
-  let apiKeyInput = $state(settings.apiKey);
-  let selectedProvider = $state(settings.apiProvider);
-  let selectedVoice = $state(settings.defaultVoice);
-  let fileInput: HTMLInputElement | null = $state(null);
+let apiKeyInput: string;
+let selectedProvider: AppSettings['apiProvider'];
+let selectedVoice: string;
+let fileInput: HTMLInputElement | null = $state(null);
+
+let _settingsSync = $derived.by(() => {
+  apiKeyInput = settings.apiKey;
+  selectedProvider = settings.apiProvider;
+  selectedVoice = settings.defaultVoice;
+  return settings;
+});
 
   const categories = getCategories();
 
@@ -388,8 +395,15 @@ async function tuneIn() {
     </div>
   {/if}
 
-  {#if showSettings}
-    <div class="settings-overlay" onclick={closeSettings} role="dialog" aria-modal="true">
+{#if showSettings}
+<div
+  class="settings-overlay"
+  onclick={closeSettings}
+  onkeydown={(e) => { if (e.key === 'Escape') closeSettings() }}
+  role="dialog"
+  aria-modal="true"
+  tabindex="-1"
+>
       <div class="settings-panel" onclick={(e) => e.stopPropagation()} role="document">
         <div class="settings-header">
           <h2>═══ SETTINGS ═══</h2>
