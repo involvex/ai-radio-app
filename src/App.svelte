@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { ttsToBlob, VOICES } from "./lib/edge-tts-client";
-  import { loadSettings, saveSettings, generateScript, type AppSettings } from "./lib/settings";
-  import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
-  import { exportData, downloadSyncFile, importData } from "./lib/sync";
-  import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
+import { onMount } from "svelte";
+import { ttsToBlob, VOICES } from "./lib/edge-tts-client";
+import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
+import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
+import { exportData, downloadSyncFile, importData } from "./lib/sync";
+import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
+import { fetchLinkContent } from "./lib/scraper";
 
   let topic = $state("");
   let link = $state("");
@@ -46,47 +47,61 @@
     }
   }
 
-  async function tuneIn() {
-    if (!topic.trim()) return;
-    isGenerating = true;
-    errorMessage = "";
-    currentScript = "";
+async function tuneIn() {
+  if (!topic.trim()) return;
+  isGenerating = true;
+  errorMessage = "";
+  currentScript = "";
 
+  let linkContent: string | undefined
+
+  if (link.trim()) {
     try {
-      const script = await generateScript(topic, settings);
-      currentScript = script;
-
-      const audioBlob = await ttsToBlob(script, { voice: selectedVoice });
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      if (audioElement) {
-        audioElement.src = audioUrl;
-        if (settings.autoPlay) {
-          await audioElement.play();
-          isPlaying = true;
-        }
-      }
-
-      const episode = {
-        title: topic.slice(0, 50) + (topic.length > 50 ? "..." : ""),
-        topic,
-        link: link || undefined,
-        script,
-        audioUrl,
-        duration: audioElement?.duration || 0,
-        createdAt: new Date(),
-        isFavorite: false,
-      };
-
-      await saveEpisode(episode);
-      await loadHistory();
+      syncMessage = "Lade URL-Inhalt..."
+      linkContent = await fetchLinkContent(link.trim())
+      syncMessage = ""
     } catch (e: any) {
-      console.error("Error:", e);
-      errorMessage = `Fehler: ${e.message || "Generation failed"}`;
-    } finally {
-      isGenerating = false;
+      errorMessage = `URL-Warnung: ${e.message}. Generiere ohne URL-Inhalt.`
+      linkContent = undefined
     }
   }
+
+  try {
+    const script = await invokeGenerateScript(topic, settings, linkContent);
+    currentScript = script;
+
+    const audioBlob = await ttsToBlob(script, { voice: selectedVoice });
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    if (audioElement) {
+      audioElement.src = audioUrl;
+      if (settings.autoPlay) {
+        await audioElement.play();
+        isPlaying = true;
+      }
+    }
+
+    const episode = {
+      title: topic.slice(0, 50) + (topic.length > 50 ? "..." : ""),
+      topic,
+      link: link || undefined,
+      script,
+      audioUrl,
+      duration: audioElement?.duration || 0,
+      createdAt: new Date(),
+      isFavorite: false,
+    };
+
+    await saveEpisode(episode);
+    await loadHistory();
+  } catch (e: any) {
+    console.error("Error:", e);
+    errorMessage = `Fehler: ${e.message || "Generation failed"}`;
+  } finally {
+    isGenerating = false;
+    syncMessage = ""
+  }
+}
 
   function togglePlayPause() {
     if (!audioElement) return;

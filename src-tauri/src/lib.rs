@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[cfg(desktop)]
@@ -67,9 +69,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.plugin(tauri_plugin_shell::init());
     }
 
-    Ok(builder
-        .invoke_handler(tauri::generate_handler![tts_http_fallback])
-        .setup(|_app| {
+Ok(builder
+  .invoke_handler(tauri::generate_handler![
+    tts_http_fallback,
+    generate_script,
+    fetch_link_content
+  ])
+  .setup(|_app| {
             #[cfg(desktop)]
             {
                 desktop::setup_tray(_app)?;
@@ -140,4 +146,197 @@ async fn tts_http_fallback(
     }
 
     Ok(full_audio)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct GenerateScriptRequest {
+  topic: String,
+  provider: String,
+  api_key: String,
+  link_content: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ChatMessage {
+  role: String,
+  content: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LlmRequest {
+  model: String,
+  messages: Vec<ChatMessage>,
+  max_tokens: u32,
+  temperature: f32,
+}
+
+#[tauri::command]
+async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
+  let system_prompt = "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag (maximal 90 Sekunden Sprechzeit) umzuwandeln.\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.";
+
+  let mut user_prompt =
+    format!("Verwandle das in ein Radioskript:\n\n{}", req.topic);
+
+  if let Some(ref lc) = req.link_content {
+    user_prompt.push_str("\n\nQuelltext (URL-Inhalt):\n");
+    user_prompt.push_str(lc);
+  }
+
+  let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(60))
+    .user_agent("AI-Radio/1.0")
+    .build()
+    .map_err(|e| format!("HTTP client error: {}", e))?;
+
+  if req.provider == "gemini" {
+    let endpoint = format!(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+      req.api_key
+    );
+    let body = serde_json::json!({
+      "contents": [
+        {"parts": [{"text": format!("{}\n\n{}", system_prompt, user_prompt)}]}
+      ],
+      "generationConfig": {"maxOutputTokens": 500, "temperature": 0.8}
+    });
+    let response = client
+      .post(endpoint)
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| format!("Gemini request failed: {}", e))?;
+    if !response.status().is_success() {
+      return Err(format!("Gemini API error: {}", response.status()));
+    }
+    let data: serde_json::Value =
+      response.json().await.map_err(|e| format!("Gemini parse error: {}", e))?;
+    let text =
+      data["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .map(|s| s.to_string());
+    return text.ok_or("Gemini response missing text".to_string());
+  }
+
+  let (endpoint, model) = if req.provider == "kilo" {
+    (
+      "https://api.kilo.sh/v1/chat/completions".to_string(),
+      "kilo/free/gemini-2.5-flash".to_string(),
+    )
+  } else {
+    (
+      "https://opencode.ai/v1/chat/completions".to_string(),
+      "opencode/deepseek-v4-flash-free".to_string(),
+    )
+  };
+
+  let body = LlmRequest {
+    model,
+    messages: vec![
+      ChatMessage {
+        role: "system".into(),
+        content: system_prompt.into(),
+      },
+      ChatMessage {
+        role: "user".into(),
+        content: user_prompt,
+      },
+    ],
+    max_tokens: 500,
+    temperature: 0.8,
+  };
+
+  let response = client
+    .post(endpoint)
+    .header("Content-Type", "application/json")
+    .header("Authorization", format!("Bearer {}", req.api_key))
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("LLM request failed: {}", e))?;
+
+  if !response.status().is_success() {
+    return Err(format!("LLM API error: {}", response.status()));
+  }
+
+  let data: serde_json::Value =
+    response.json().await.map_err(|e| format!("LLM parse error: {}", e))?;
+  let content = data["choices"][0]["message"]["content"]
+    .as_str()
+    .map(|s| s.trim().to_string());
+  content.ok_or("LLM response missing content".to_string())
+}
+
+#[tauri::command]
+async fn fetch_link_content(url: String) -> Result<String, String> {
+  let target = if url.starts_with("http://") || url.starts_with("https://") {
+    url
+  } else {
+    format!("https://{}", url)
+  };
+
+  let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(30))
+    .user_agent("Mozilla/5.0 (compatible; AI-Radio/1.0)")
+    .build()
+    .map_err(|e| format!("HTTP client error: {}", e))?;
+
+  let response = client
+    .get(&target)
+    .send()
+    .await
+    .map_err(|e| format!("URL request failed: {}", e))?;
+
+  if !response.status().is_success() {
+    return Err(format!(
+      "URL konnte nicht geladen werden (HTTP {})",
+      response.status()
+    ));
+  }
+
+  let html = response
+    .text()
+    .await
+    .map_err(|e| format!("Failed to read response: {}", e))?;
+
+  let title_re = Regex::new(r"(?i)<title[^>]*>([^<]+)</title>")
+    .map_err(|e| format!("Regex error: {}", e))?;
+  let title = title_re
+    .captures(&html)
+    .and_then(|c| c.get(1))
+    .map(|m| m.as_str().trim())
+    .unwrap_or("");
+
+  let mut text = html
+    .replace("<script", " <script")
+    .replace("</script>", "</script> ");
+
+  let script_re = Regex::new(r"(?is)<script[^>]*>.*?</script>")
+    .map_err(|e| format!("Regex error: {}", e))?;
+  text = script_re.replace_all(&text, " ").to_string();
+
+  let style_re = Regex::new(r"(?is)<style[^>]*>.*?</style>")
+    .map_err(|e| format!("Regex error: {}", e))?;
+  text = style_re.replace_all(&text, " ").to_string();
+
+  let tag_re = Regex::new(r"<[^>]+>")
+    .map_err(|e| format!("Regex error: {}", e))?;
+  text = tag_re.replace_all(&text, " ").to_string();
+
+  text = text
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&nbsp;", " ")
+    .replace("&#160;", " ");
+
+  let ws_re = Regex::new(r"\s+").map_err(|e| format!("Regex error: {}", e))?;
+  text = ws_re.replace_all(&text, " ").trim().to_string();
+
+  text = text.chars().take(8000).collect::<String>();
+
+  if !title.is_empty() {
+    Ok(format!("Titel: {}\n\n{}", title, text))
+  } else {
+    Ok(text)
+  }
 }

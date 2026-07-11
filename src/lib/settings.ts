@@ -6,6 +6,40 @@ export interface AppSettings {
 	playbackSpeed: number
 }
 
+interface TauriRuntime {
+	invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
+}
+
+export async function invokeGenerateScript(
+	topic: string,
+	settings: AppSettings,
+	linkContent?: string,
+): Promise<string> {
+	const tauri = (window as Window & Partial<{__TAURI__: TauriRuntime}>)
+		.__TAURI__
+
+	if (!tauri?.invoke) {
+		throw new Error(
+			'Tauri runtime nicht gefunden. Bitte starte die App mit "bun run tauri dev".',
+		)
+	}
+
+	try {
+		return (await tauri.invoke('generate_script', {
+			topic,
+			provider: settings.apiProvider,
+			api_key: settings.apiKey,
+			link_content: linkContent ?? null,
+		})) as string
+	} catch (err) {
+		console.error('[Tauri] generate_script failed:', err)
+		throw new Error(
+			err instanceof Error ? err.message : 'LLM-Anfrage fehlgeschlagen',
+			{cause: err},
+		)
+	}
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
 	apiKey: '',
 	apiProvider: 'none',
@@ -51,95 +85,4 @@ export function saveSettings(settings: AppSettings): void {
 export function generateScriptFallback(topic: string): string {
 	const title = topic.slice(0, 100)
 	return `Hallo und willkommen bei AI Radio! Heute geht's um ${title}. Hier ist dein persönlicher Radio-Beitrag. Viel Spaß beim Hören! Übrigens, das war's auch schon wieder für heute. Bis zum nächsten Mal, bleib dran!`
-}
-
-export async function generateScript(
-	topic: string,
-	settings: AppSettings,
-): Promise<string> {
-	if (settings.apiProvider === 'none' || !settings.apiKey) {
-		return generateScriptFallback(topic)
-	}
-
-	try {
-		let endpoint = ''
-		let model = ''
-
-		switch (settings.apiProvider) {
-			case 'kilo':
-				endpoint = 'https://api.kilo.sh/v1/chat/completions'
-				model = 'kilo/free/gemini-2.5-flash'
-				break
-			case 'opencode':
-				endpoint = 'https://opencode.ai/v1/chat/completions'
-				model = 'opencode/deepseek-v4-flash-free'
-				break
-			case 'gemini':
-				endpoint =
-					'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
-				break
-		}
-
-		const systemPrompt = `Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag (maximal 90 Sekunden Sprechzeit) umzuwandeln.
-- Nutze kurze Sätze. Keine Schachtelsätze.
-- Verwende rhetorische Fragen und lockere Überleitungen ("Übrigens...", "Schon gewusst?").
-- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.`
-
-		if (settings.apiProvider === 'gemini') {
-			const response = await fetch(`${endpoint}?key=${settings.apiKey}`, {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({
-					contents: [
-						{
-							parts: [
-								{
-									text: `${systemPrompt}\n\nVerwandle das in ein Radioskript:\n\n${topic}`,
-								},
-							],
-						},
-					],
-					generationConfig: {maxOutputTokens: 500, temperature: 0.8},
-				}),
-			})
-			const data = await response.json()
-			return (
-				data.candidates?.[0]?.content?.parts?.[0]?.text ||
-				generateScriptFallback(topic)
-			)
-		} else {
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${settings.apiKey}`,
-				},
-				body: JSON.stringify({
-					model,
-					messages: [
-						{role: 'system', content: systemPrompt},
-						{
-							role: 'user',
-							content: `Verwandle das in ein Radioskript:\n\n${topic}`,
-						},
-					],
-					max_tokens: 500,
-					temperature: 0.8,
-				}),
-			})
-
-			if (!response.ok) {
-				throw new Error(`API error: ${response.status}`)
-			}
-
-			const data = await response.json()
-			return (
-				data.choices?.[0]?.message?.content?.trim() ||
-				generateScriptFallback(topic)
-			)
-		}
-	} catch (error) {
-		console.error('LLM error, using fallback:', error)
-		return generateScriptFallback(topic)
-	}
 }
