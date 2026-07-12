@@ -1,5 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -60,8 +58,10 @@ mod desktop {
     }
 }
 
+#[allow(unused_must_use)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -73,6 +73,7 @@ Ok(builder
   .invoke_handler(tauri::generate_handler![
     tts_http_fallback,
     generate_script,
+    generate_script_local,
     fetch_link_content
   ])
   .setup(|_app| {
@@ -172,6 +173,15 @@ struct LlmRequest {
 
 #[tauri::command]
 async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
+  eprintln!("[generate_script] START provider={} api_key_len={}", req.provider, req.api_key.len());
+
+  if req.api_key.is_empty() {
+    return Err("No API key configured".to_string());
+  }
+  if req.provider == "none" {
+    return Err("No provider selected".to_string());
+  }
+
   let system_prompt = "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag (maximal 90 Sekunden Sprechzeit) umzuwandeln.\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.";
 
   let mut user_prompt =
@@ -190,7 +200,7 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
 
   if req.provider == "gemini" {
     let endpoint = format!(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={}",
       req.api_key
     );
     let body = serde_json::json!({
@@ -206,7 +216,10 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
       .await
       .map_err(|e| format!("Gemini request failed: {}", e))?;
     if !response.status().is_success() {
-      return Err(format!("Gemini API error: {}", response.status()));
+      let status = response.status();
+      let body = response.text().await.unwrap_or_default();
+      eprintln!("[generate_script] Gemini API error: status={} body={}", status, body);
+      return Err(format!("Gemini API error: {} - {}", status, body));
     }
     let data: serde_json::Value =
       response.json().await.map_err(|e| format!("Gemini parse error: {}", e))?;
@@ -219,12 +232,12 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
 
   let (endpoint, model) = if req.provider == "kilo" {
     (
-      "https://api.kilo.sh/v1/chat/completions".to_string(),
-      "kilo/free/gemini-2.5-flash".to_string(),
+      "https://api.kilo.ai/api/gateway/chat/completions".to_string(),
+      "kilo-auto/free".to_string(),
     )
   } else {
     (
-      "https://opencode.ai/v1/chat/completions".to_string(),
+      "https://opencode.ai/zen/v1/chat/completions".to_string(),
       "opencode/deepseek-v4-flash-free".to_string(),
     )
   };
@@ -246,7 +259,7 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
   };
 
   let response = client
-    .post(endpoint)
+    .post(&endpoint)
     .header("Content-Type", "application/json")
     .header("Authorization", format!("Bearer {}", req.api_key))
     .json(&body)
@@ -254,8 +267,14 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
     .await
     .map_err(|e| format!("LLM request failed: {}", e))?;
 
+  eprintln!("[generate_script] provider={} endpoint={} status={} api_key_len={}",
+    req.provider, endpoint, response.status(), req.api_key.len());
+
   if !response.status().is_success() {
-    return Err(format!("LLM API error: {}", response.status()));
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    eprintln!("[generate_script] LLM API error: status={} body={}", status, body);
+    return Err(format!("LLM API error: {} - {}", status, body));
   }
 
   let data: serde_json::Value =
@@ -339,4 +358,14 @@ async fn fetch_link_content(url: String) -> Result<String, String> {
   } else {
     Ok(text)
   }
+}
+
+#[tauri::command]
+async fn generate_script_local(
+    _model_path: String,
+    topic: String,
+) -> Result<String, String> {
+  eprintln!("[generate_script_local] called with topic={}", topic);
+  // On-device LLM not yet implemented - use API mode
+  Err("On-device LLM not yet implemented. Please use API mode with a valid API key.".to_string())
 }

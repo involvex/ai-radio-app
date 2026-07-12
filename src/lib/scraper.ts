@@ -1,28 +1,27 @@
-interface TauriRuntime {
-	invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
-}
+import {invoke} from '@tauri-apps/api/core'
 
 export async function fetchLinkContent(url: string): Promise<string> {
-	const tauri = (window as Window & {__TAURI__?: TauriRuntime}).__TAURI__
-	if (tauri?.invoke) {
-		return (await tauri.invoke('fetch_link_content', {url})) as string
+	try {
+		return (await invoke('fetch_link_content', {url})) as string
+	} catch {
+		const target = url.startsWith('http') ? url : `https://${url}`
+
+		const response = await fetch(target, {
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (compatible; AI-Radio/1.0)',
+				Accept: 'text/html,application/xhtml+xml',
+			},
+		})
+
+		if (!response.ok) {
+			throw new Error(
+				`URL konnte nicht geladen werden (HTTP ${response.status})`,
+			)
+		}
+
+		const html = await response.text()
+		return extractTextFromHtml(html)
 	}
-
-	const target = url.startsWith('http') ? url : `https://${url}`
-
-	const response = await fetch(target, {
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (compatible; AI-Radio/1.0)',
-			Accept: 'text/html,application/xhtml+xml',
-		},
-	})
-
-	if (!response.ok) {
-		throw new Error(`URL konnte nicht geladen werden (HTTP ${response.status})`)
-	}
-
-	const html = await response.text()
-	return extractTextFromHtml(html)
 }
 
 function extractTextFromHtml(html: string): string {

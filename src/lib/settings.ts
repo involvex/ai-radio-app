@@ -1,3 +1,5 @@
+import {invoke} from '@tauri-apps/api/core'
+
 export interface AppSettings {
 	apiKey: string
 	apiProvider: 'kilo' | 'opencode' | 'gemini' | 'none'
@@ -6,37 +8,24 @@ export interface AppSettings {
 	playbackSpeed: number
 }
 
-interface TauriRuntime {
-	invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
-}
-
 export async function invokeGenerateScript(
 	topic: string,
 	settings: AppSettings,
 	linkContent?: string,
 ): Promise<string> {
-	const tauri = (window as Window & Partial<{__TAURI__: TauriRuntime}>)
-		.__TAURI__
-
-	if (!tauri?.invoke) {
-		throw new Error(
-			'Tauri runtime nicht gefunden. Bitte starte die App mit "bun run tauri dev".',
-		)
-	}
-
 	try {
-		return (await tauri.invoke('generate_script', {
-			topic,
-			provider: settings.apiProvider,
-			api_key: settings.apiKey,
-			link_content: linkContent ?? null,
+		return (await invoke('generate_script', {
+			req: {
+				topic,
+				provider: settings.apiProvider,
+				api_key: settings.apiKey,
+				link_content: linkContent ?? null,
+			},
 		})) as string
 	} catch (err) {
 		console.error('[Tauri] generate_script failed:', err)
-		throw new Error(
-			err instanceof Error ? err.message : 'LLM-Anfrage fehlgeschlagen',
-			{cause: err},
-		)
+		const message = err instanceof Error ? err.message : String(err)
+		throw new Error(message || 'LLM-Anfrage fehlgeschlagen', {cause: err})
 	}
 }
 
