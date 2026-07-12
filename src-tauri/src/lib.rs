@@ -155,6 +155,7 @@ struct GenerateScriptRequest {
   provider: String,
   api_key: String,
   link_content: Option<String>,
+  quality: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -173,7 +174,7 @@ struct LlmRequest {
 
 #[tauri::command]
 async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
-  eprintln!("[generate_script] START provider={} api_key_len={}", req.provider, req.api_key.len());
+  eprintln!("[generate_script] START provider={} api_key_len={} quality={:?}", req.provider, req.api_key.len(), req.quality);
 
   if req.api_key.is_empty() {
     return Err("No API key configured".to_string());
@@ -182,7 +183,18 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
     return Err("No provider selected".to_string());
   }
 
-  let system_prompt = "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag (maximal 90 Sekunden Sprechzeit) umzuwandeln.\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.";
+  let quality = req.quality.as_deref().unwrap_or("normal");
+  let (max_tokens, temp, duration_hint) = match quality {
+    "short" => (200, 0.9, "maximal 30 Sekunden Sprechzeit"),
+    "long" => (800, 0.7, "maximal 3 Minuten Sprechzeit"),
+    "chill" => (1000, 0.6, "entspannt und ausführlich, bis zu 4 Minuten Sprechzeit"),
+    _ => (500, 0.8, "maximal 90 Sekunden Sprechzeit"),
+  };
+
+  let system_prompt = format!(
+    "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag ({}) umzuwandeln.\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.",
+    duration_hint
+  );
 
   let mut user_prompt =
     format!("Verwandle das in ein Radioskript:\n\n{}", req.topic);
@@ -230,7 +242,7 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
     return text.ok_or("Gemini response missing text".to_string());
   }
 
-  let (endpoint, model) = if req.provider == "kilo" {
+let (endpoint, model) = if req.provider == "kilo" {
     (
       "https://api.kilo.ai/api/gateway/chat/completions".to_string(),
       "kilo-auto/free".to_string(),
@@ -247,15 +259,15 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
     messages: vec![
       ChatMessage {
         role: "system".into(),
-        content: system_prompt.into(),
+        content: system_prompt,
       },
       ChatMessage {
         role: "user".into(),
         content: user_prompt,
       },
     ],
-    max_tokens: 500,
-    temperature: 0.8,
+    max_tokens,
+    temperature: temp,
   };
 
   let response = client

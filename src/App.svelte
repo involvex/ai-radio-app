@@ -27,12 +27,14 @@ import { fetchLinkContent } from "./lib/scraper";
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
 let selectedVoice: string;
+let selectedQuality: AppSettings['quality'];
 let fileInput: HTMLInputElement | null = $state(null);
 
 let _settingsSync = $derived.by(() => {
   apiKeyInput = settings.apiKey;
   selectedProvider = settings.apiProvider;
   selectedVoice = settings.defaultVoice;
+  selectedQuality = settings.quality;
   return settings;
 });
 
@@ -43,6 +45,7 @@ let _settingsSync = $derived.by(() => {
     apiKeyInput = settings.apiKey;
     selectedProvider = settings.apiProvider;
     selectedVoice = settings.defaultVoice;
+    selectedQuality = settings.quality;
     await loadHistory();
   });
 
@@ -184,6 +187,7 @@ async function tuneIn() {
       apiKey: apiKeyInput,
       apiProvider: selectedProvider,
       defaultVoice: selectedVoice,
+      quality: selectedQuality,
     };
     saveSettings(settings);
     showSettings = false;
@@ -465,6 +469,18 @@ async function tuneIn() {
                     <option value={voice.id}>{voice.name} ({voice.gender})</option>
                   {/each}
                 </optgroup>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3>Script-Qualität</h3>
+            <div class="quality-select">
+              <select bind:value={selectedQuality}>
+                <option value="short">Kurz (30s)</option>
+                <option value="normal">Normal (90s)</option>
+                <option value="long">Lang (3min)</option>
+                <option value="chill">Chill (4min, ausführlich)</option>
               </select>
             </div>
           </div>

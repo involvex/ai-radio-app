@@ -6,6 +6,7 @@ export interface AppSettings {
 	defaultVoice: string
 	autoPlay: boolean
 	playbackSpeed: number
+	quality: 'short' | 'normal' | 'long' | 'chill'
 }
 
 export async function invokeGenerateScript(
@@ -20,6 +21,7 @@ export async function invokeGenerateScript(
 				provider: settings.apiProvider,
 				api_key: settings.apiKey,
 				link_content: linkContent ?? null,
+				quality: settings.quality,
 			},
 		})) as string
 	} catch (err) {
@@ -35,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 	defaultVoice: 'de-DE-KillianNeural',
 	autoPlay: true,
 	playbackSpeed: 1,
+	quality: 'normal',
 }
 
 export function loadSettings(): AppSettings {
