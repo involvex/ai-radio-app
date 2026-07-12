@@ -18,7 +18,7 @@ import { fetchLinkContent } from "./lib/scraper";
   let showHistory = $state(false);
   let showSettings = $state(false);
   let showTopicSuggestions = $state(false);
-  let history: Episode[] = $state([]);
+  let episodeHistory: Episode[] = $state([]);
   let settings: AppSettings = $state(loadSettings());
   let errorMessage = $state("");
   let syncMessage = $state("");
@@ -28,6 +28,7 @@ let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
 let selectedVoice: string;
 let selectedQuality: AppSettings['quality'];
+let selectedStyle: AppSettings['style'];
 let fileInput: HTMLInputElement | null = $state(null);
 
 let _settingsSync = $derived.by(() => {
@@ -35,6 +36,7 @@ let _settingsSync = $derived.by(() => {
   selectedProvider = settings.apiProvider;
   selectedVoice = settings.defaultVoice;
   selectedQuality = settings.quality;
+  selectedStyle = settings.style;
   return settings;
 });
 
@@ -46,22 +48,35 @@ let _settingsSync = $derived.by(() => {
     selectedProvider = settings.apiProvider;
     selectedVoice = settings.defaultVoice;
     selectedQuality = settings.quality;
+    selectedStyle = settings.style;
     await loadHistory();
+
+    window.addEventListener('popstate', handlePopState);
   });
+
+  function handlePopState(_event: PopStateEvent) {
+    if (showHistory) {
+      showHistory = false;
+    } else if (showSettings) {
+      showSettings = false;
+    }
+  }
 
   async function loadHistory() {
     try {
-      history = await getAllEpisodes();
+      episodeHistory = await getAllEpisodes();
     } catch (e) {
       console.error("Failed to load history:", e);
     }
   }
 
-async function tuneIn() {
+async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
   if (!topic.trim()) return;
   isGenerating = true;
   errorMessage = "";
   currentScript = "";
+
+  const activeTopic = mode === 'similar' && similarTopic ? similarTopic : topic;
 
   let linkContent: string | undefined
 
@@ -77,7 +92,7 @@ async function tuneIn() {
   }
 
   try {
-    const script = await invokeGenerateScript(topic, settings, linkContent);
+    const script = await invokeGenerateScript(activeTopic, settings, linkContent, mode, similarTopic);
     currentScript = script;
 
     const audioBlob = await ttsToBlob(script, { voice: selectedVoice });
@@ -92,8 +107,8 @@ async function tuneIn() {
     }
 
     const episode = {
-      title: topic.slice(0, 50) + (topic.length > 50 ? "..." : ""),
-      topic,
+      title: activeTopic.slice(0, 50) + (activeTopic.length > 50 ? "..." : ""),
+      topic: activeTopic,
       link: link || undefined,
       script,
       audioUrl,
@@ -110,6 +125,39 @@ async function tuneIn() {
   } finally {
     isGenerating = false;
     syncMessage = ""
+  }
+}
+
+async function handleDeeper() {
+  await tuneIn('deeper');
+}
+
+async function handleReroll() {
+  await tuneIn();
+}
+
+async function handleSimilar() {
+  if (settings.apiProvider === 'none' || !settings.apiKey) {
+    topic = getRandomTopic();
+    await tuneIn();
+    return;
+  }
+  syncMessage = "Suche ähnliche Themen...";
+  try {
+    const { suggestRelatedTopic } = await import("./lib/settings");
+    const related = await suggestRelatedTopic(topic, settings);
+    if (related) {
+      topic = related;
+      await tuneIn();
+    } else {
+      topic = getRandomTopic();
+      await tuneIn();
+    }
+  } catch {
+    topic = getRandomTopic();
+    await tuneIn();
+  } finally {
+    syncMessage = "";
   }
 }
 
@@ -150,6 +198,7 @@ async function tuneIn() {
       isPlaying = true;
     }
     showHistory = false;
+    if (window.history.state?.panel) window.history.back();
   }
 
   async function deleteEpisode(id: string) {
@@ -174,11 +223,16 @@ async function tuneIn() {
     apiKeyInput = settings.apiKey;
     selectedProvider = settings.apiProvider;
     selectedVoice = settings.defaultVoice;
+    selectedStyle = settings.style;
     showSettings = true;
+    window.history.pushState({panel: 'settings'}, '');
   }
 
   function closeSettings() {
     showSettings = false;
+    if (window.history.state?.panel) {
+      window.history.back();
+    }
   }
 
   function saveSettingsAndClose() {
@@ -188,6 +242,7 @@ async function tuneIn() {
       apiProvider: selectedProvider,
       defaultVoice: selectedVoice,
       quality: selectedQuality,
+      style: selectedStyle,
     };
     saveSettings(settings);
     showSettings = false;
@@ -318,7 +373,7 @@ async function tuneIn() {
     <div class="controls">
       <button
         class="btn-primary"
-        onclick={tuneIn}
+        onclick={() => tuneIn()}
         disabled={isGenerating || !topic.trim()}
       >
         {isGenerating ? "[ GENERATING... ]" : "[ ▶ TUNE IN ]"}
@@ -330,7 +385,11 @@ async function tuneIn() {
         </button>
       {/if}
 
-      <button class="btn-history" onclick={() => showHistory = !showHistory}>
+      <button class="btn-history" onclick={() => {
+        showHistory = !showHistory;
+        if (showHistory) window.history.pushState({panel: 'history'}, '');
+        else if (window.history.state?.panel) window.history.back();
+      }}>
         [ 📜 HISTORY ]
       </button>
     </div>
@@ -361,6 +420,18 @@ async function tuneIn() {
       <div class="script-preview">
         <p>{currentScript.slice(0, 300)}{currentScript.length > 300 ? "..." : ""}</p>
       </div>
+
+      <div class="post-actions">
+        <button class="btn-action" onclick={handleDeeper} disabled={isGenerating}>
+          [ 🔍 MEHR DAZU ]
+        </button>
+        <button class="btn-action" onclick={handleReroll} disabled={isGenerating}>
+          [ 🔄 NEU ]
+        </button>
+        <button class="btn-action" onclick={handleSimilar} disabled={isGenerating}>
+          [ 🎲 ÄHNLICH ]
+        </button>
+      </div>
     {/if}
   </div>
 
@@ -368,14 +439,17 @@ async function tuneIn() {
     <div class="history-panel">
       <div class="history-header">
         <h2>═══ HISTORY ═══</h2>
-        <button onclick={() => showHistory = false}>[ ✕ ]</button>
+        <button onclick={() => {
+          showHistory = false;
+          if (window.history.state?.panel) window.history.back();
+        }}>[ ✕ ]</button>
       </div>
 
       <div class="history-list">
-        {#if history.length === 0}
+        {#if episodeHistory.length === 0}
           <p class="empty">No episodes yet...</p>
         {:else}
-          {#each history as episode}
+          {#each episodeHistory as episode}
             <div class="episode-card">
               <div class="episode-info">
                 <span class="episode-title">
@@ -483,6 +557,21 @@ async function tuneIn() {
                 <option value="chill">Chill (4min, ausführlich)</option>
               </select>
             </div>
+          </div>
+
+          <div class="settings-section">
+            <h3>Sprechstil</h3>
+            <div class="style-select">
+              <select bind:value={selectedStyle}>
+                <option value="tech">💻 Tech-Fokus</option>
+                <option value="casual">😎 Locker & Frei</option>
+                <option value="academic">🎓 Akademisch</option>
+                <option value="entertaining">🎭 Unterhaltsam</option>
+                <option value="news">📺 Nachrichten</option>
+                <option value="podcast">🎙️ Podcast</option>
+              </select>
+            </div>
+            <p class="hint">beeinflusst den Tonfall und Stil des Radio-Beitrags</p>
           </div>
 
           <div class="settings-section">
@@ -1079,5 +1168,51 @@ async function tuneIn() {
   .category-btn:hover {
     border-style: solid;
     background: #003311;
+  }
+
+  .post-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-action {
+    background: #111111;
+    border: 1px solid #003311;
+    color: #00aa2a;
+    padding: 0.5rem 1rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-action:hover:not(:disabled) {
+    background: #003311;
+    border-color: #00ff41;
+    color: #00ff41;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+  }
+
+  .btn-action:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .style-select select {
+    width: 100%;
+    background: #111111;
+    border: 1px solid #003311;
+    color: #00ff41;
+    padding: 0.5rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .style-select select:focus {
+    border-color: #00ff41;
+    outline: none;
   }
 </style>

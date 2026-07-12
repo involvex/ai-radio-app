@@ -74,7 +74,8 @@ Ok(builder
     tts_http_fallback,
     generate_script,
     generate_script_local,
-    fetch_link_content
+    fetch_link_content,
+    suggest_related_topic
   ])
   .setup(|_app| {
             #[cfg(desktop)]
@@ -156,6 +157,8 @@ struct GenerateScriptRequest {
   api_key: String,
   link_content: Option<String>,
   quality: Option<String>,
+  style: Option<String>,
+  mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -172,9 +175,32 @@ struct LlmRequest {
   temperature: f32,
 }
 
+fn build_system_prompt(quality: &str, style: &str) -> String {
+  let duration_hint = match quality {
+    "short" => "maximal 30 Sekunden Sprechzeit",
+    "long" => "maximal 3 Minuten Sprechzeit",
+    "chill" => "entspannt und ausführlich, bis zu 4 Minuten Sprechzeit",
+    _ => "maximal 90 Sekunden Sprechzeit",
+  };
+
+  let style_intro = match style {
+    "casual" => "Du sprichst wie mit einem guten Freund. Locker, umgangssprachlich, mit Humor und Alltagsbeispielen. Du darfst 'du'zen, Abkürzungen nutzen und kleine Anekdoten einwerfen.",
+    "academic" => "Du bist ein erfahrener Dozent und Erklärer. Strukturiert, faktenbasiert, mit klaren Zusammenhängen und Hintergründen. Verwende präzise Fachbegriffe und erkläre sie.",
+    "entertaining" => "Du bist ein unterhaltsamer Erzähler und Entertainer. Nutze Humor, überraschende Fakten, Storytelling und rhetorische Fragen. Mach das Thema zum Erlebnis.",
+    "news" => "Du bist ein erfahrener Nachrichtensprecher. Sachlich, prägnant, informativ. Im Stil einer guten Nachrichtensendung mit klaren Fakten und Einordnungen.",
+    "podcast" => "Du bist ein erfahrener Podcast-Host. Persönlich, nahbar, mit eigenen Anekdoten und direkten Fragen an die Hörer. Wie ein Gespräch mit einem klugen Freund.",
+    _ => "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Nutze technisches Verständnis, erkläre komplexe Themen verständlich, mit Beispielen aus der digitalen Welt.",
+  };
+
+  format!(
+    "{} Du verwandelst den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag ({}).\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.",
+    style_intro, duration_hint
+  )
+}
+
 #[tauri::command]
 async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
-  eprintln!("[generate_script] START provider={} api_key_len={} quality={:?}", req.provider, req.api_key.len(), req.quality);
+  eprintln!("[generate_script] START provider={} api_key_len={} quality={:?} style={:?} mode={:?}", req.provider, req.api_key.len(), req.quality, req.style, req.mode);
 
   if req.api_key.is_empty() {
     return Err("No API key configured".to_string());
@@ -184,20 +210,24 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
   }
 
   let quality = req.quality.as_deref().unwrap_or("normal");
-  let (max_tokens, temp, duration_hint) = match quality {
-    "short" => (200, 0.9, "maximal 30 Sekunden Sprechzeit"),
-    "long" => (800, 0.7, "maximal 3 Minuten Sprechzeit"),
-    "chill" => (1000, 0.6, "entspannt und ausführlich, bis zu 4 Minuten Sprechzeit"),
-    _ => (500, 0.8, "maximal 90 Sekunden Sprechzeit"),
+  let style = req.style.as_deref().unwrap_or("tech");
+  let system_prompt = build_system_prompt(quality, style);
+
+  let (max_tokens, temp) = match quality {
+    "short" => (200, 0.9),
+    "long" => (800, 0.7),
+    "chill" => (1000, 0.6),
+    _ => (500, 0.8),
   };
 
-  let system_prompt = format!(
-    "Du bist ein erfahrener Radio-Moderator für ein Tech- und Infotainment-Radio. Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht verständlichen Radio-Beitrag ({}) umzuwandeln.\n- Nutze kurze Sätze. Keine Schachtelsätze.\n- Verwende rhetorische Fragen und lockere Überleitungen (\"Übrigens...\", \"Schon gewusst?\").\n- Antworte ausschließlich mit dem reinen Sprechtext. Keine Markdown-Formatierung.",
-    duration_hint
-  );
-
-  let mut user_prompt =
-    format!("Verwandle das in ein Radioskript:\n\n{}", req.topic);
+  let mode = req.mode.as_deref().unwrap_or("normal");
+  let mut user_prompt = match mode {
+    "deeper" => format!(
+      "Gehe vertieft auf das Thema ein. Erzähle mehr Hintergründe, Details, Zusammenhänge und interessante Fakten.\n\nVerwandle das in ein Radioskript:\n\n{}",
+      req.topic
+    ),
+    _ => format!("Verwandle das in ein Radioskript:\n\n{}", req.topic),
+  };
 
   if let Some(ref lc) = req.link_content {
     user_prompt.push_str("\n\nQuelltext (URL-Inhalt):\n");
@@ -380,4 +410,102 @@ async fn generate_script_local(
   eprintln!("[generate_script_local] called with topic={}", topic);
   // On-device LLM not yet implemented - use API mode
   Err("On-device LLM not yet implemented. Please use API mode with a valid API key.".to_string())
+}
+
+#[tauri::command]
+async fn suggest_related_topic(
+    topic: String,
+    provider: String,
+    api_key: String,
+) -> Result<String, String> {
+  if api_key.is_empty() || provider == "none" {
+    return Err("No API key configured".to_string());
+  }
+
+  let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(30))
+    .user_agent("AI-Radio/1.0")
+    .build()
+    .map_err(|e| format!("HTTP client error: {}", e))?;
+
+  let system_prompt = "Du bist ein Radio-Editor. Nenne genau 3 verwandte, interessante Themen zum gegebenen Thema. Antworte NUR mit den 3 Themen, je eine pro Zeile, ohne Nummerierung oder Aufzählungszeichen.";
+  let user_prompt = format!("Welche 3 verwandten Themen passen zu: {}?", topic);
+
+  let response_text = if provider == "gemini" {
+    let endpoint = format!(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={}",
+      api_key
+    );
+    let body = serde_json::json!({
+      "contents": [
+        {"parts": [{"text": format!("{}\n\n{}", system_prompt, user_prompt)}]}
+      ],
+      "generationConfig": {"maxOutputTokens": 200, "temperature": 0.9}
+    });
+    let response = client
+      .post(&endpoint)
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| format!("Gemini request failed: {}", e))?;
+    if !response.status().is_success() {
+      return Err(format!("Gemini API error: {}", response.status()));
+    }
+    let data: serde_json::Value =
+      response.json().await.map_err(|e| format!("Gemini parse error: {}", e))?;
+    data["candidates"][0]["content"]["parts"][0]["text"]
+      .as_str()
+      .map(|s| s.to_string())
+      .unwrap_or_default()
+  } else {
+    let (endpoint, model) = if provider == "kilo" {
+      (
+        "https://api.kilo.ai/api/gateway/chat/completions".to_string(),
+        "kilo-auto/free".to_string(),
+      )
+    } else {
+      (
+        "https://opencode.ai/zen/v1/chat/completions".to_string(),
+        "mimo-v2.5-free".to_string(),
+      )
+    };
+
+    let body = serde_json::json!({
+      "model": model,
+      "messages": [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+      ],
+      "max_tokens": 200,
+      "temperature": 0.9
+    });
+
+    let response = client
+      .post(&endpoint)
+      .header("Content-Type", "application/json")
+      .header("Authorization", format!("Bearer {}", api_key))
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| format!("LLM request failed: {}", e))?;
+
+    if !response.status().is_success() {
+      return Err(format!("LLM API error: {}", response.status()));
+    }
+
+    let data: serde_json::Value =
+      response.json().await.map_err(|e| format!("LLM parse error: {}", e))?;
+    data["choices"][0]["message"]["content"]
+      .as_str()
+      .map(|s| s.to_string())
+      .unwrap_or_default()
+  };
+
+  let lines: Vec<&str> = response_text.lines().filter(|l| !l.trim().is_empty()).collect();
+  if lines.is_empty() {
+    return Err("No related topics generated".to_string());
+  }
+
+  let idx = (rand::random::<f32>() * lines.len() as f32).floor() as usize;
+  Ok(lines[idx % lines.len()].trim().to_string())
 }

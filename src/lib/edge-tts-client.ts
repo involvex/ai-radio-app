@@ -247,7 +247,12 @@ export const VOICES = {
 		{id: 'de-DE-KillianNeural', name: 'Killian (Male)', gender: 'Male'},
 		{id: 'de-DE-ConradNeural', name: 'Conrad (Male)', gender: 'Male'},
 		{id: 'de-DE-FreyaNeural', name: 'Freya (Female)', gender: 'Female'},
-		{id: 'de-DE-KatjaNeural', name: 'Katja (Female)', gender: 'Female'},
+		{id: 'de-DE-AmalaNeural', name: 'Amala (Female)', gender: 'Female'},
+		{
+			id: 'de-DE-SeraphinaMultilingualNeural',
+			name: 'Seraphina (Female, Multilingual)',
+			gender: 'Female',
+		},
 	],
 	english: [
 		{id: 'en-US-GuyNeural', name: 'Guy (Male)', gender: 'Male'},
