@@ -238,7 +238,7 @@ async fn generate_script(req: GenerateScriptRequest) -> Result<String, String> {
   } else {
     (
       "https://opencode.ai/zen/v1/chat/completions".to_string(),
-      "opencode/deepseek-v4-flash-free".to_string(),
+      "mimo-v2.5-free".to_string(),
     )
   };
 
