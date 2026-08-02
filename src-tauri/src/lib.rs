@@ -75,7 +75,8 @@ Ok(builder
     generate_script,
     generate_script_local,
     fetch_link_content,
-    suggest_related_topic
+    suggest_related_topic,
+    test_sidecar
   ])
   .setup(|_app| {
             #[cfg(desktop)]
@@ -410,6 +411,14 @@ async fn generate_script_local(
   eprintln!("[generate_script_local] called with topic={}", topic);
   // On-device LLM not yet implemented - use API mode
   Err("On-device LLM not yet implemented. Please use API mode with a valid API key.".to_string())
+}
+
+#[tauri::command]
+async fn test_sidecar(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+    let sidecar_command = app.shell().sidecar("binaries/llama-server").map_err(|e| e.to_string())?;
+    let (mut _rx, _child) = sidecar_command.args(["--version"]).spawn().map_err(|e| e.to_string())?;
+    Ok("Sidecar spawned successfully".to_string())
 }
 
 #[tauri::command]
