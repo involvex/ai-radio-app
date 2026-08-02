@@ -12,8 +12,8 @@ import {
   AVAILABLE_MODELS,
   type LocalModel,
   type DownloadProgress,
-} from '$lib/local-llm'
-import {loadSettings, saveSettings} from '$lib/settings'
+} from '../lib/local-llm'
+import {loadSettings, saveSettings} from '../lib/settings'
 
 let installedModels: LocalModel[] = $state([])
 let activeModelPath: string = $state('')
