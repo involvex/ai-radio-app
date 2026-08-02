@@ -2,7 +2,8 @@ import {invoke} from '@tauri-apps/api/core'
 
 export interface AppSettings {
 	apiKey: string
-	apiProvider: 'kilo' | 'opencode' | 'gemini' | 'none'
+	apiProvider: 'kilo' | 'opencode' | 'gemini' | 'local' | 'none'
+	localModelPath?: string
 	defaultVoice: string
 	autoPlay: boolean
 	playbackSpeed: number
@@ -17,10 +18,31 @@ export async function invokeGenerateScript(
 	mode?: 'deeper' | 'similar',
 	similarTopic?: string,
 ): Promise<string> {
+	const effectiveTopic =
+		mode === 'similar' && similarTopic ? similarTopic : topic
+
+	if (settings.apiProvider === 'local') {
+		try {
+			return await invoke<string>('generate_script_local', {
+				topic: effectiveTopic,
+				quality: settings.quality,
+				style: settings.style,
+				linkContent: linkContent || null,
+				mode: mode || null,
+			})
+		} catch (err) {
+			console.error('[Tauri] generate_script_local failed:', err)
+			const message = err instanceof Error ? err.message : String(err)
+			throw new Error(message || 'Local LLM-Anfrage fehlgeschlagen', {
+				cause: err,
+			})
+		}
+	}
+
 	try {
 		return (await invoke('generate_script', {
 			req: {
-				topic: mode === 'similar' && similarTopic ? similarTopic : topic,
+				topic: effectiveTopic,
 				provider: settings.apiProvider,
 				api_key: settings.apiKey,
 				link_content: linkContent ?? null,
@@ -89,7 +111,11 @@ export async function suggestRelatedTopic(
 	topic: string,
 	settings: AppSettings,
 ): Promise<string> {
-	if (settings.apiProvider === 'none' || !settings.apiKey) {
+	if (
+		settings.apiProvider === 'none' ||
+		settings.apiProvider === 'local' ||
+		!settings.apiKey
+	) {
 		return ''
 	}
 	try {
