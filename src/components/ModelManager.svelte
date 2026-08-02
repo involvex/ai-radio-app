@@ -15,6 +15,8 @@ import {
 } from '../lib/local-llm'
 import {loadSettings, saveSettings} from '../lib/settings'
 
+const isAndroid = /android/i.test(navigator.userAgent)
+
 let installedModels: LocalModel[] = $state([])
 let activeModelPath: string = $state('')
 let llmStatus: 'NOT RUNNING' | 'STARTING...' | 'READY' | 'ERROR' = $state('NOT RUNNING')
@@ -144,6 +146,14 @@ function isModelInstalled(filename: string): boolean {
 <div class="model-manager">
   <h3>═══ LOCAL LLM ═══</h3>
 
+  {#if isAndroid}
+    <div class="android-warning">
+      <span class="warning-icon">⚠️</span>
+      <span>Local LLM ist auf Android nicht verfügbar.</span>
+      <span class="warning-hint">Bitte verwende einen Cloud-Anbieter (Kilo, OpenCode, Gemini).</span>
+    </div>
+  {:else}
+
   <div class="status-bar">
     <span class="status-label">STATUS:</span>
     <span
@@ -241,6 +251,7 @@ function isModelInstalled(filename: string): boolean {
       [ 🔄 REFRESH ]
     </button>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -256,6 +267,29 @@ function isModelInstalled(filename: string): boolean {
     color: #00ff41;
     margin-bottom: 1rem;
     text-shadow: 0 0 5px #00ff41;
+  }
+
+  .android-warning {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: #1a1200;
+    border: 1px solid #664400;
+    color: #ffaa00;
+    font-size: 0.8rem;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .android-warning .warning-icon {
+    font-size: 1.5rem;
+  }
+
+  .android-warning .warning-hint {
+    font-size: 0.75rem;
+    color: #886622;
   }
 
   .status-bar {

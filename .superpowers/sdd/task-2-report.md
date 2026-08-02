@@ -17,11 +17,11 @@
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `src-tauri/Cargo.toml` | Added `dirs`, `futures-util`, `tauri-plugin-dialog`, reqwest `stream` feature |
-| `src-tauri/src/model_manager.rs` | New file — 4 commands |
-| `src-tauri/src/lib.rs` | Added `mod model_manager`, 4 commands to handler, dialog plugin |
+| File                             | Change                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `src-tauri/Cargo.toml`           | Added `dirs`, `futures-util`, `tauri-plugin-dialog`, reqwest `stream` feature |
+| `src-tauri/src/model_manager.rs` | New file — 4 commands                                                         |
+| `src-tauri/src/lib.rs`           | Added `mod model_manager`, 4 commands to handler, dialog plugin               |
 
 ## Self-Review Findings
 

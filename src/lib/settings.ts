@@ -72,7 +72,15 @@ export function loadSettings(): AppSettings {
 	try {
 		const saved = localStorage.getItem('ai-radio-settings')
 		if (saved) {
-			return {...DEFAULT_SETTINGS, ...JSON.parse(saved)}
+			const loaded = {...DEFAULT_SETTINGS, ...JSON.parse(saved)}
+			// Auto-switch away from local provider on Android (sidecar not available)
+			if (
+				/android/i.test(navigator.userAgent) &&
+				loaded.apiProvider === 'local'
+			) {
+				loaded.apiProvider = 'kilo'
+			}
+			return loaded
 		}
 	} catch (e) {
 		console.error('Failed to load settings:', e)

@@ -9,15 +9,18 @@
 ## Test Results
 
 ### `bun run check`
+
 - **Format (Prettier):** All files formatted, no changes needed
 - **Lint (ESLint):** No errors or warnings
 - **TypeCheck (tsc --noEmit):** No type errors
 - **Result: PASS**
 
 ### `bun run lint`
+
 - **Result: PASS** — clean output, no issues
 
 ### `cargo check`
+
 - **Result: PASS** — compiled in 5.97s, no warnings or errors
 
 ## Fixes Applied
@@ -41,6 +44,7 @@ The codebase is clean and ready for build. All lint, type-check, formatting, and
 **Problem:** String prefix check (`starts_with`) on raw paths is unsafe — an attacker could bypass it via path manipulation.
 
 **Fix:** Replaced with `canonicalize()` comparisons:
+
 - `download_model`: Canonicalizes the parent directory of the destination and compares against the canonical models dir.
 - `delete_model`: Canonicalizes the existing file path and checks `starts_with` against the canonical models dir.
 
@@ -55,6 +59,7 @@ The codebase is clean and ready for build. All lint, type-check, formatting, and
 **Problem:** No feedback when the llama-server sidecar crashes — the app would appear stuck.
 
 **Fix:**
+
 - Captures the `Receiver<CommandEvent>` from `spawn()` instead of discarding it.
 - Spawns a tokio task that listens for `Terminated` events on the receiver.
 - Emits `local-llm-error` with exit code when the process terminates unexpectedly.
@@ -62,15 +67,15 @@ The codebase is clean and ready for build. All lint, type-check, formatting, and
 
 ## Post-Fix Verification
 
-| Check | Result |
-|---|---|
-| `cargo check` | PASS — compiled in 25.69s |
-| `bun run typecheck` | PASS — no type errors |
+| Check               | Result                    |
+| ------------------- | ------------------------- |
+| `cargo check`       | PASS — compiled in 25.69s |
+| `bun run typecheck` | PASS — no type errors     |
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `src-tauri/src/model_manager.rs` | Canonicalized path traversal guards |
-| `src-tauri/capabilities/default.json` | Added dialog permissions |
-| `src-tauri/src/local_llm.rs` | Added sidecar crash monitoring via `Receiver<CommandEvent>` |
+| File                                  | Change                                                      |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `src-tauri/src/model_manager.rs`      | Canonicalized path traversal guards                         |
+| `src-tauri/capabilities/default.json` | Added dialog permissions                                    |
+| `src-tauri/src/local_llm.rs`          | Added sidecar crash monitoring via `Receiver<CommandEvent>` |

@@ -46,9 +46,18 @@ let _settingsSync = $derived.by(() => {
 
   const categories = getCategories();
 
+  // Detect if running on Android (local LLM sidecar not available)
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const canUseLocalLLM = !isAndroid;
+
   onMount(() => {
     (async () => {
       settings = loadSettings();
+      // Auto-switch away from local provider on Android
+      if (isAndroid && settings.apiProvider === 'local') {
+        settings.apiProvider = 'kilo';
+        saveSettings(settings);
+      }
       apiKeyInput = settings.apiKey;
       selectedProvider = settings.apiProvider;
       selectedVoice = settings.defaultVoice;
@@ -543,11 +552,17 @@ async function handleSimilar() {
                 <input type="radio" bind:group={selectedProvider} value="gemini" />
                 <span>Google Gemini</span>
               </label>
-              <label class="provider-option">
-                <input type="radio" bind:group={selectedProvider} value="local" />
-                <span>Local LLM (Offline)</span>
+              <label class="provider-option" class:disabled={!canUseLocalLLM}>
+                <input type="radio" bind:group={selectedProvider} value="local" disabled={!canUseLocalLLM} />
+                <span>Local LLM (Offline){#if !canUseLocalLLM} — Desktop only{/if}</span>
               </label>
             </div>
+
+            {#if !canUseLocalLLM && selectedProvider === 'local'}
+              <p class="hint warning">
+                ⚠️ Local LLM ist auf Android nicht verfügbar. Bitte wähle einen Cloud-Anbieter.
+              </p>
+            {/if}
 
             <div class="input-group">
               <label for="apiKey">API Key:</label>
@@ -1089,8 +1104,17 @@ async function handleSimilar() {
     font-size: 0.875rem;
   }
 
+  .provider-option.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .provider-option input, .checkbox-option input {
     accent-color: #00ff41;
+  }
+
+  .provider-option.disabled input {
+    accent-color: #555;
   }
 
   .voice-select select {

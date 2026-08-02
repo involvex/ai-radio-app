@@ -1,0 +1,105 @@
+diff --git a/src/App.svelte b/src/App.svelte
+index f2bf8f3..1d272be 100644
+--- a/src/App.svelte
++++ b/src/App.svelte
+@@ -6,6 +6,7 @@ import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFa
+ import { exportData, downloadSyncFile, importData } from "./lib/sync";
+ import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
+ import { fetchLinkContent } from "./lib/scraper";
++import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
+ import ModelManager from "./components/ModelManager.svelte";
+ 
+   let topic = $state("");
+@@ -24,6 +25,8 @@ import ModelManager from "./components/ModelManager.svelte";
+   let errorMessage = $state("");
+   let syncMessage = $state("");
+   let isSyncing = $state(false);
++  let localGenerating = $state(false);
++  let localStatus: 'NOT RUNNING' | 'STARTING...' | 'READY' | 'ERROR' = $state('NOT RUNNING');
+ 
+ let apiKeyInput: string;
+ let selectedProvider: AppSettings['apiProvider'];
+@@ -53,6 +56,15 @@ let _settingsSync = $derived.by(() => {
+     await loadHistory();
+ 
+     window.addEventListener('popstate', handlePopState);
++
++    if (settings.apiProvider === 'local') {
++      const unlistenReady = onLocalLLMReady(() => {
++        localStatus = 'READY';
++      });
++      const unlistenError = onLocalLLMError((_error: string) => {
++        localStatus = 'ERROR';
++      });
++    }
+   });
+ 
+   function handlePopState(_event: PopStateEvent) {
+@@ -74,6 +86,7 @@ let _settingsSync = $derived.by(() => {
+ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
+   if (!topic.trim()) return;
+   isGenerating = true;
++  localGenerating = settings.apiProvider === 'local';
+   errorMessage = "";
+   currentScript = "";
+ 
+@@ -125,6 +138,7 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
+     errorMessage = `Fehler: ${e.message || "Generation failed"}`;
+   } finally {
+     isGenerating = false;
++    localGenerating = false;
+     syncMessage = ""
+   }
+ }
+@@ -314,8 +328,13 @@ async function handleSimilar() {
+     <h1>­ƒôí AI_RADIO_v1.0.0</h1>
+     <div class="header-actions">
+       <button class="icon-btn" onclick={openSettings} title="Settings">ÔÜÖ</button>
++      {#if settings.apiProvider === 'local'}
++        <span class="local-badge" class:ready={localStatus === 'READY'} class:error={localStatus === 'ERROR'} class:starting={localStatus === 'STARTING...'}>
++          LOCAL AI: {localStatus}
++        </span>
++      {/if}
+       <span class="status-indicator">
+-        {isGenerating ? "GENERATING..." : "READY"}
++        {isGenerating ? (localGenerating ? "LOCAL GENERATING..." : "GENERATING...") : "READY"}
+         {#if settings.apiProvider === "none"}
+           <span class="badge">OFFLINE</span>
+         {/if}
+@@ -719,6 +738,36 @@ async function handleSimilar() {
+     border-radius: 2px;
+   }
+ 
++  .local-badge {
++    background: #1a1a00;
++    color: #00aa2a;
++    padding: 0.125rem 0.5rem;
++    font-size: 0.625rem;
++    border-radius: 2px;
++    border: 1px solid #003311;
++  }
++
++  .local-badge.ready {
++    color: #00ff41;
++    border-color: #00ff41;
++    text-shadow: 0 0 5px #00ff41;
++  }
++
++  .local-badge.error {
++    color: #ff3333;
++    border-color: #ff3333;
++  }
++
++  .local-badge.starting {
++    color: #ffaa00;
++    border-color: #ffaa00;
++    animation: blink 1s infinite;
++  }
++
++  @keyframes blink {
++    50% { opacity: 0.5; }
++  }
++
+   .error-banner {
+     background: #330000;
+     border: 1px solid #ff3333;

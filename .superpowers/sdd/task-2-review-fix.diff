@@ -1,0 +1,151 @@
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 00e901d..b3a620a 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -28,6 +28,5 @@ reqwest = { version = "0.12", default-features = false, features = [
+ # llm = "0.1.0-rc4"  # Removed - complex API, using Python subprocess instead
+ rand = "0.8"
+ tokio = { version = "1", features = ["process"] }
+-dirs = "5.0"
+ futures-util = "0.3"
+ tauri-plugin-dialog = "2"
+diff --git a/src-tauri/src/model_manager.rs b/src-tauri/src/model_manager.rs
+index 4009767..413d4e6 100644
+--- a/src-tauri/src/model_manager.rs
++++ b/src-tauri/src/model_manager.rs
+@@ -11,14 +11,14 @@ pub struct LocalModel {
+     pub downloaded: bool,
+ }
+ 
+-fn models_dir(app: &AppHandle) -> PathBuf {
+-    let data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+-    data_dir.join("models")
++fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
++    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
++    Ok(data_dir.join("models"))
+ }
+ 
+ #[tauri::command]
+ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModel>, String> {
+-    let dir = models_dir(&app);
++    let dir = models_dir(&app)?;
+     if !dir.exists() {
+         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+     }
+@@ -31,7 +31,7 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModel>, String
+             let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+             let filename = path.file_name().unwrap().to_string_lossy().to_string();
+             models.push(LocalModel {
+-                name: filename.replace(".gguf", ""),
++                name: filename.strip_suffix(".gguf").unwrap_or(&filename).to_string(),
+                 filename,
+                 path: path.to_string_lossy().to_string(),
+                 size_bytes: metadata.len(),
+@@ -48,10 +48,17 @@ pub async fn download_model(
+     url: String,
+     filename: String,
+ ) -> Result<String, String> {
+-    let dir = models_dir(&app);
++    let dir = models_dir(&app)?;
+     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+     let dest = dir.join(&filename);
+ 
++    // Path traversal check
++    let resolved = dest.canonicalize().map_err(|e| e.to_string())?;
++    let models_root = dir.canonicalize().map_err(|e| e.to_string())?;
++    if !resolved.starts_with(&models_root) {
++        return Err("Invalid filename".to_string());
++    }
++
+     if dest.exists() {
+         return Ok(dest.to_string_lossy().to_string());
+     }
+@@ -61,6 +68,11 @@ pub async fn download_model(
+         .build()
+         .map_err(|e| e.to_string())?;
+     let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
++
++    if !response.status().is_success() {
++        return Err(format!("Download failed: HTTP {}", response.status()));
++    }
++
+     let total_size = response.content_length().unwrap_or(0);
+ 
+     let mut file = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
+@@ -70,15 +82,24 @@ pub async fn download_model(
+     use futures_util::StreamExt;
+     use std::io::Write;
+ 
+-    while let Some(chunk) = stream.next().await {
+-        let chunk = chunk.map_err(|e| e.to_string())?;
+-        file.write_all(&chunk).map_err(|e| e.to_string())?;
+-        downloaded += chunk.len() as u64;
+-        app.emit("model-download-progress", serde_json::json!({
+-            "filename": filename,
+-            "downloaded": downloaded,
+-            "total": total_size,
+-        })).ok();
++    let download_result = async {
++        while let Some(chunk) = stream.next().await {
++            let chunk = chunk.map_err(|e| e.to_string())?;
++            file.write_all(&chunk).map_err(|e| e.to_string())?;
++            downloaded += chunk.len() as u64;
++            app.emit("model-download-progress", serde_json::json!({
++                "filename": filename,
++                "downloaded": downloaded,
++                "total": total_size,
++            })).ok();
++        }
++        Ok::<(), String>(())
++    }
++    .await;
++
++    if let Err(e) = download_result {
++        let _ = std::fs::remove_file(&dest);
++        return Err(e);
+     }
+ 
+     Ok(dest.to_string_lossy().to_string())
+@@ -86,7 +107,16 @@ pub async fn download_model(
+ 
+ #[tauri::command]
+ pub async fn delete_model(app: AppHandle, filename: String) -> Result<(), String> {
+-    let path = models_dir(&app).join(&filename);
++    let dir = models_dir(&app)?;
++    let path = dir.join(&filename);
++
++    // Path traversal check
++    let resolved = path.canonicalize().map_err(|e| e.to_string())?;
++    let models_root = dir.canonicalize().map_err(|e| e.to_string())?;
++    if !resolved.starts_with(&models_root) {
++        return Err("Invalid filename".to_string());
++    }
++
+     if path.exists() {
+         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+     }
+@@ -95,12 +125,16 @@ pub async fn delete_model(app: AppHandle, filename: String) -> Result<(), String
+ 
+ #[tauri::command]
+ pub async fn pick_model_file(app: AppHandle) -> Result<Option<String>, String> {
+-    use tauri_plugin_dialog::DialogExt;
+-    let file = app.dialog().file()
+-        .add_filter("GGUF Model", &["gguf"])
+-        .blocking_pick_file();
+-    match file {
+-        Some(path) => Ok(Some(path.to_string())),
+-        None => Ok(None),
+-    }
++    tokio::task::spawn_blocking(move || {
++        use tauri_plugin_dialog::DialogExt;
++        let file = app.dialog().file()
++            .add_filter("GGUF Model", &["gguf"])
++            .blocking_pick_file();
++        match file {
++            Some(path) => Ok(Some(path.to_string())),
++            None => Ok(None),
++        }
++    })
++    .await
++    .map_err(|e| e.to_string())?
+ }

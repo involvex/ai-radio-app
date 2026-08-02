@@ -1,0 +1,270 @@
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 37a82cc..f9bc282 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -2,6 +2,7 @@ use regex::Regex;
+ use serde::{Deserialize, Serialize};
+ use std::time::Duration;
+ 
++mod local_llm;
+ mod model_manager;
+ 
+ #[cfg(desktop)]
+@@ -70,16 +71,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+     {
+         builder = builder.plugin(tauri_plugin_shell::init());
+     }
+-    builder = builder.plugin(tauri_plugin_dialog::init());
++    builder = builder
++        .plugin(tauri_plugin_dialog::init())
++        .manage(local_llm::LocalLlmState::default());
+ 
+ Ok(builder
+   .invoke_handler(tauri::generate_handler![
+     tts_http_fallback,
+     generate_script,
+-    generate_script_local,
+     fetch_link_content,
+     suggest_related_topic,
+     test_sidecar,
++    local_llm::start_local_llm,
++    local_llm::stop_local_llm,
++    local_llm::generate_script_local,
+     model_manager::list_local_models,
+     model_manager::download_model,
+     model_manager::delete_model,
+@@ -410,16 +415,6 @@ async fn fetch_link_content(url: String) -> Result<String, String> {
+   }
+ }
+ 
+-#[tauri::command]
+-async fn generate_script_local(
+-    _model_path: String,
+-    topic: String,
+-) -> Result<String, String> {
+-  eprintln!("[generate_script_local] called with topic={}", topic);
+-  // On-device LLM not yet implemented - use API mode
+-  Err("On-device LLM not yet implemented. Please use API mode with a valid API key.".to_string())
+-}
+-
+ #[tauri::command]
+ async fn test_sidecar(app: tauri::AppHandle) -> Result<String, String> {
+     use tauri_plugin_shell::ShellExt;
+diff --git a/src-tauri/src/local_llm.rs b/src-tauri/src/local_llm.rs
+new file mode 100644
+index 0000000..742d0c7
+--- /dev/null
++++ b/src-tauri/src/local_llm.rs
+@@ -0,0 +1,212 @@
++use std::sync::Mutex;
++use tauri::{AppHandle, Emitter, Manager};
++use tauri_plugin_shell::ShellExt;
++
++pub struct LocalLlmState {
++    pub child: Mutex<Option<tauri_plugin_shell::process::CommandChild>>,
++    pub port: u16,
++    pub model_path: Mutex<Option<String>>,
++}
++
++impl Default for LocalLlmState {
++    fn default() -> Self {
++        Self {
++            child: Mutex::new(None),
++            port: 8080,
++            model_path: Mutex::new(None),
++        }
++    }
++}
++
++#[tauri::command]
++pub async fn start_local_llm(
++    app: AppHandle,
++    model_path: String,
++) -> Result<String, String> {
++    let state = app.state::<LocalLlmState>();
++
++    stop_local_llm_inner(&state)?;
++
++    let port = state.port;
++    let model = model_path.clone();
++
++    let sidecar_command = app
++        .shell()
++        .sidecar("binaries/llama-server")
++        .map_err(|e| e.to_string())?;
++
++    let args = vec![
++        "--model".to_string(),
++        model,
++        "--port".to_string(),
++        port.to_string(),
++        "--host".to_string(),
++        "127.0.0.1".to_string(),
++        "--ctx-size".to_string(),
++        "2048".to_string(),
++        "--n-predict".to_string(),
++        "1024".to_string(),
++        "--no-warmup".to_string(),
++    ];
++
++    let (_rx, child) = sidecar_command
++        .args(&args)
++        .spawn()
++        .map_err(|e| e.to_string())?;
++
++    *state.child.lock().unwrap() = Some(child);
++    *state.model_path.lock().unwrap() = Some(model_path);
++
++    let url = format!("http://127.0.0.1:{}/health", port);
++    let client = reqwest::Client::new();
++    for _ in 0..30 {
++        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
++        if let Ok(resp) = client.get(&url).send().await {
++            if resp.status().is_success() {
++                app.emit("local-llm-ready", ()).ok();
++                return Ok(format!("Local LLM started on port {}", port));
++            }
++        }
++    }
++
++    Err("Local LLM failed to start within 15 seconds".to_string())
++}
++
++fn stop_local_llm_inner(state: &LocalLlmState) -> Result<(), String> {
++    if let Some(child) = state.child.lock().unwrap().take() {
++        child.kill().map_err(|e| e.to_string())?;
++    }
++    Ok(())
++}
++
++#[tauri::command]
++pub async fn stop_local_llm(app: AppHandle) -> Result<(), String> {
++    let state = app.state::<LocalLlmState>();
++    stop_local_llm_inner(&state)?;
++    Ok(())
++}
++
++#[tauri::command]
++pub async fn generate_script_local(
++    app: AppHandle,
++    topic: String,
++    quality: String,
++    style: String,
++    link_content: Option<String>,
++    mode: Option<String>,
++) -> Result<String, String> {
++    let state = app.state::<LocalLlmState>();
++    let port = state.port;
++
++    let system_prompt = build_local_system_prompt(&quality, &style);
++    let user_prompt = build_local_user_prompt(&topic, &link_content, &mode);
++
++    let request_body = serde_json::json!({
++        "messages": [
++            { "role": "system", "content": system_prompt },
++            { "role": "user", "content": user_prompt }
++        ],
++        "max_tokens": max_tokens_for_quality(&quality),
++        "temperature": temperature_for_quality(&quality),
++        "stream": false
++    });
++
++    let client = reqwest::Client::builder()
++        .timeout(std::time::Duration::from_secs(120))
++        .build()
++        .map_err(|e| e.to_string())?;
++
++    let response = client
++        .post(format!("http://127.0.0.1:{}/v1/chat/completions", port))
++        .json(&request_body)
++        .send()
++        .await
++        .map_err(|e| format!("Local LLM request failed: {}", e))?;
++
++    let body: serde_json::Value = response
++        .json()
++        .await
++        .map_err(|e| e.to_string())?;
++
++    let script = body["choices"][0]["message"]["content"]
++        .as_str()
++        .unwrap_or("")
++        .to_string();
++
++    if script.is_empty() {
++        return Err("Local LLM returned empty response".to_string());
++    }
++
++    Ok(script)
++}
++
++fn build_local_system_prompt(quality: &str, style: &str) -> String {
++    let duration = match quality {
++        "short" => "30 Sekunden",
++        "long" => "3 Minuten",
++        "chill" => "4 Minuten",
++        _ => "90 Sekunden",
++    };
++
++    let style_hint = match style {
++        "tech" => "Technisch versiert, mit klaren Erkl├ñrungen.",
++        "casual" => "Locker und ungezwungen, wie unter Freunden.",
++        "academic" => "Fachkundig und pr├ñzise, aber verst├ñndlich.",
++        "entertaining" => "Unterhaltsam mit ├£berraschungsmomenten.",
++        "news" => "Nachrichtlich informativ und sachlich.",
++        "podcast" => "Podcast-Atmosph├ñre, pers├Ânlich und nahbar.",
++        _ => "Locker und verst├ñndlich.",
++    };
++
++    format!(
++        "Du bist ein erfahrener Radio-Moderator f├╝r ein Tech- und Infotainment-Radio. \
++         Deine Aufgabe ist es, den bereitgestellten Text in einen kurzen, extrem leicht \
++         verst├ñndlichen Radio-Beitrag (maximal {} Sprechzeit) umzuwandeln.\n\
++         {}\n\
++         - Nutze kurze S├ñtze. Keine Schachtels├ñtze.\n\
++         - Verwende rhetorische Fragen und lockere ├£berleitungen.\n\
++         - Antworte ausschlie├ƒlich mit dem reinen Sprechtext.",
++        duration, style_hint
++    )
++}
++
++fn build_local_user_prompt(
++    topic: &str,
++    link_content: &Option<String>,
++    mode: &Option<String>,
++) -> String {
++    let mut prompt = match mode.as_deref() {
++        Some("deeper") => format!(
++            "Gehe vertieft auf das Thema '{}' ein. Erkl├ñre den Kontext, warum es wichtig ist, und nenne konkrete Beispiele.",
++            topic
++        ),
++        _ => format!(
++            "Verwandle das following Topic in ein Radioskript: '{}'",
++            topic
++        ),
++    };
++
++    if let Some(content) = link_content {
++        prompt.push_str(&format!("\n\nQuelltext (URL-Inhalt):\n{}", content));
++    }
++
++    prompt
++}
++
++fn max_tokens_for_quality(quality: &str) -> u32 {
++    match quality {
++        "short" => 200,
++        "long" => 800,
++        "chill" => 1000,
++        _ => 500,
++    }
++}
++
++fn temperature_for_quality(quality: &str) -> f32 {
++    match quality {
++        "short" => 0.9,
++        "long" => 0.7,
++        "chill" => 0.6,
++        _ => 0.8,
++    }
++}

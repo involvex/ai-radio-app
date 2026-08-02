@@ -1,1 +1,18 @@
-{"default":{"identifier":"default","description":"Default capabilities for AI Radio","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-execute","allow":[{"args":true,"name":"binaries/llama-server","sidecar":true}]},"shell:allow-spawn","shell:allow-kill"]}}
+{
+	"default": {
+		"identifier": "default",
+		"description": "Default capabilities for AI Radio",
+		"local": true,
+		"windows": ["main"],
+		"permissions": [
+			"core:default",
+			"shell:allow-execute",
+			"shell:allow-spawn",
+			"shell:allow-kill",
+			"dialog:allow-open",
+			"dialog:allow-save",
+			"dialog:allow-ask",
+			"dialog:allow-message"
+		]
+	}
+}

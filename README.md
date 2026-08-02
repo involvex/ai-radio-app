@@ -80,20 +80,22 @@ AI Radio includes built-in support for running LLMs locally via **llama.cpp**. T
 
 ### Recommended Models
 
-| Model | Size | RAM Required | Quality |
-|-------|------|--------------|---------|
-| Qwen2.5-1.5B-Instruct | 1.5B | ~2 GB | Good for short scripts |
-| Qwen2.5-3B-Instruct | 3B | ~4 GB | Better coherence |
-| Llama-3.2-3B-Instruct | 3B | ~4 GB | Great for English |
-| Gemma-2-2B-IT | 2B | ~3 GB | Fast, multilingual |
+| Model                 | Size | RAM Required | Quality                |
+| --------------------- | ---- | ------------ | ---------------------- |
+| Qwen2.5-1.5B-Instruct | 1.5B | ~2 GB        | Good for short scripts |
+| Qwen2.5-3B-Instruct   | 3B   | ~4 GB        | Better coherence       |
+| Llama-3.2-3B-Instruct | 3B   | ~4 GB        | Great for English      |
+| Gemma-2-2B-IT         | 2B   | ~3 GB        | Fast, multilingual     |
 
 Models are stored in:
+
 - **Windows**: `%APPDATA%\com.airoadio.desktop\models\`
 - **Linux**: `~/.local/share/com.airoadio.desktop/models/`
 
 ### Model Sources
 
 Download GGUF models from:
+
 - [Hugging Face - GGUF](https://huggingface.co/models?sort=trending&search=gguf)
 - [TheBloke's Models](https://huggingface.co/TheBloke)
 
@@ -103,11 +105,11 @@ Cloud providers enhance script quality but require API keys. The app works fully
 
 ### Supported Providers
 
-| Provider | Registration | Free Tier |
-|----------|-------------|-----------|
-| **Kilo Gateway** | [kilo.sh](https://kilo.sh) | Yes |
-| **OpenCode AI** | [opencode.ai](https://opencode.ai) | Yes |
-| **Google Gemini** | [AI Studio](https://aistudio.google.com) | Yes |
+| Provider          | Registration                             | Free Tier |
+| ----------------- | ---------------------------------------- | --------- |
+| **Kilo Gateway**  | [kilo.sh](https://kilo.sh)               | Yes       |
+| **OpenCode AI**   | [opencode.ai](https://opencode.ai)       | Yes       |
+| **Google Gemini** | [AI Studio](https://aistudio.google.com) | Yes       |
 
 ### Configuration
 
@@ -139,30 +141,30 @@ VITE_EDGE_TTS_TOKEN=6A5AA1D4EAFF4E9FB37E23D68491D6F4
 
 ### Frontend
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Svelte | ^5.0.0 | UI framework (runes syntax) |
-| TypeScript | ^5.5.0 | Type safety |
-| Vite | ^6.0.0 | Build tool and dev server |
-| Dexie | ^4.0.10 | IndexedDB wrapper for episode storage |
-| cheerio | ^1.0.0 | HTML parsing |
+| Technology | Version | Purpose                               |
+| ---------- | ------- | ------------------------------------- |
+| Svelte     | ^5.0.0  | UI framework (runes syntax)           |
+| TypeScript | ^5.5.0  | Type safety                           |
+| Vite       | ^6.0.0  | Build tool and dev server             |
+| Dexie      | ^4.0.10 | IndexedDB wrapper for episode storage |
+| cheerio    | ^1.0.0  | HTML parsing                          |
 
 ### Desktop/Mobile
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Tauri | ^2.0.0 | Cross-platform app framework |
-| Rust | 2021 edition | Native backend, system tray |
-| llama-server | bundled | Local LLM inference |
+| Technology   | Version      | Purpose                      |
+| ------------ | ------------ | ---------------------------- |
+| Tauri        | ^2.0.0       | Cross-platform app framework |
+| Rust         | 2021 edition | Native backend, system tray  |
+| llama-server | bundled      | Local LLM inference          |
 
 ### LLM/TTS Providers
 
-| Provider | Endpoint | Model/Service |
-|----------|----------|---------------|
-| Kilo Gateway | `api.kilo.ai` | kilo-auto/free |
-| OpenCode AI | `opencode.ai` | mimo-v2.5-free |
+| Provider      | Endpoint                            | Model/Service            |
+| ------------- | ----------------------------------- | ------------------------ |
+| Kilo Gateway  | `api.kilo.ai`                       | kilo-auto/free           |
+| OpenCode AI   | `opencode.ai`                       | mimo-v2.5-free           |
 | Google Gemini | `generativelanguage.googleapis.com` | gemini-flash-lite-latest |
-| Edge TTS | `speech.platform.bing.com` | Neural voices |
+| Edge TTS      | `speech.platform.bing.com`          | Neural voices            |
 
 ## Project Structure
 
