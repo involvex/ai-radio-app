@@ -26,7 +26,7 @@ import ModelManager from "./components/ModelManager.svelte";
   let syncMessage = $state("");
   let isSyncing = $state(false);
   let localGenerating = $state(false);
-  let localStatus: 'NOT RUNNING' | 'STARTING...' | 'READY' | 'ERROR' = $state('NOT RUNNING');
+  let localStatus: 'NOT RUNNING' | 'READY' | 'ERROR' = $state('NOT RUNNING');
 
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
@@ -46,25 +46,38 @@ let _settingsSync = $derived.by(() => {
 
   const categories = getCategories();
 
-  onMount(async () => {
-    settings = loadSettings();
-    apiKeyInput = settings.apiKey;
-    selectedProvider = settings.apiProvider;
-    selectedVoice = settings.defaultVoice;
-    selectedQuality = settings.quality;
-    selectedStyle = settings.style;
-    await loadHistory();
+  onMount(() => {
+    (async () => {
+      settings = loadSettings();
+      apiKeyInput = settings.apiKey;
+      selectedProvider = settings.apiProvider;
+      selectedVoice = settings.defaultVoice;
+      selectedQuality = settings.quality;
+      selectedStyle = settings.style;
+      await loadHistory();
+    })();
 
     window.addEventListener('popstate', handlePopState);
 
-    if (settings.apiProvider === 'local') {
-      const unlistenReady = onLocalLLMReady(() => {
-        localStatus = 'READY';
-      });
-      const unlistenError = onLocalLLMError((_error: string) => {
-        localStatus = 'ERROR';
-      });
-    }
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  });
+
+  $effect(() => {
+    if (settings.apiProvider !== 'local') return;
+
+    const unsubReady = onLocalLLMReady(() => {
+      localStatus = 'READY';
+    });
+    const unsubError = onLocalLLMError((_error: string) => {
+      localStatus = 'ERROR';
+    });
+
+    return () => {
+      unsubReady.then((unsub) => unsub());
+      unsubError.then((unsub) => unsub());
+    };
   });
 
   function handlePopState(_event: PopStateEvent) {
@@ -329,7 +342,7 @@ async function handleSimilar() {
     <div class="header-actions">
       <button class="icon-btn" onclick={openSettings} title="Settings">⚙</button>
       {#if settings.apiProvider === 'local'}
-        <span class="local-badge" class:ready={localStatus === 'READY'} class:error={localStatus === 'ERROR'} class:starting={localStatus === 'STARTING...'}>
+        <span class="local-badge" class:ready={localStatus === 'READY'} class:error={localStatus === 'ERROR'}>
           LOCAL AI: {localStatus}
         </span>
       {/if}
@@ -756,16 +769,6 @@ async function handleSimilar() {
   .local-badge.error {
     color: #ff3333;
     border-color: #ff3333;
-  }
-
-  .local-badge.starting {
-    color: #ffaa00;
-    border-color: #ffaa00;
-    animation: blink 1s infinite;
-  }
-
-  @keyframes blink {
-    50% { opacity: 0.5; }
   }
 
   .error-banner {
