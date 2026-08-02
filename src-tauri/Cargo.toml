@@ -23,7 +23,11 @@ regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
 	"rustls-tls",
 	"json",
+	"stream",
 ] }
 # llm = "0.1.0-rc4"  # Removed - complex API, using Python subprocess instead
 rand = "0.8"
 tokio = { version = "1", features = ["process"] }
+dirs = "5.0"
+futures-util = "0.3"
+tauri-plugin-dialog = "2"

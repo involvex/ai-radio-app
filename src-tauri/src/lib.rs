@@ -2,6 +2,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+mod model_manager;
+
 #[cfg(desktop)]
 mod desktop {
     use tauri::{
@@ -68,6 +70,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         builder = builder.plugin(tauri_plugin_shell::init());
     }
+    builder = builder.plugin(tauri_plugin_dialog::init());
 
 Ok(builder
   .invoke_handler(tauri::generate_handler![
@@ -76,7 +79,11 @@ Ok(builder
     generate_script_local,
     fetch_link_content,
     suggest_related_topic,
-    test_sidecar
+    test_sidecar,
+    model_manager::list_local_models,
+    model_manager::download_model,
+    model_manager::delete_model,
+    model_manager::pick_model_file
   ])
   .setup(|_app| {
             #[cfg(desktop)]
