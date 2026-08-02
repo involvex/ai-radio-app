@@ -6,6 +6,7 @@ import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFa
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
 import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
 import { fetchLinkContent } from "./lib/scraper";
+import ModelManager from "./components/ModelManager.svelte";
 
   let topic = $state("");
   let link = $state("");
@@ -510,6 +511,10 @@ async function handleSimilar() {
                 <input type="radio" bind:group={selectedProvider} value="gemini" />
                 <span>Google Gemini</span>
               </label>
+              <label class="provider-option">
+                <input type="radio" bind:group={selectedProvider} value="local" />
+                <span>Local LLM (Offline)</span>
+              </label>
             </div>
 
             <div class="input-group">
@@ -526,6 +531,10 @@ async function handleSimilar() {
               <p class="hint warning">
                 ⚠️ Ohne API wird ein einfacher Fallback-Text generiert.
               </p>
+            {/if}
+
+            {#if selectedProvider === 'local'}
+              <ModelManager />
             {/if}
           </div>
 
