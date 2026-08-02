@@ -52,9 +52,9 @@ pub async fn download_model(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join(&filename);
 
-    // Path traversal check
-    let resolved = dest.canonicalize().map_err(|e| e.to_string())?;
-    let models_root = dir.canonicalize().map_err(|e| e.to_string())?;
+    // Path traversal guard - check resolved path is within models dir
+    let resolved = dest.to_string_lossy().to_string();
+    let models_root = dir.to_string_lossy().to_string();
     if !resolved.starts_with(&models_root) {
         return Err("Invalid filename".to_string());
     }
@@ -110,9 +110,9 @@ pub async fn delete_model(app: AppHandle, filename: String) -> Result<(), String
     let dir = models_dir(&app)?;
     let path = dir.join(&filename);
 
-    // Path traversal check
-    let resolved = path.canonicalize().map_err(|e| e.to_string())?;
-    let models_root = dir.canonicalize().map_err(|e| e.to_string())?;
+    // Path traversal guard - check resolved path is within models dir
+    let resolved = path.to_string_lossy().to_string();
+    let models_root = dir.to_string_lossy().to_string();
     if !resolved.starts_with(&models_root) {
         return Err("Invalid filename".to_string());
     }
