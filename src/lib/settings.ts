@@ -4,6 +4,7 @@ export interface AppSettings {
 	apiKey: string
 	apiProvider: 'kilo' | 'opencode' | 'gemini' | 'local' | 'none'
 	localModelPath?: string
+	localModelKey?: string
 	defaultVoice: string
 	autoPlay: boolean
 	playbackSpeed: number
@@ -22,19 +23,15 @@ export async function invokeGenerateScript(
 		mode === 'similar' && similarTopic ? similarTopic : topic
 
 	if (settings.apiProvider === 'local') {
-		try {
-			return await invoke<string>('generate_script_local', {
+		const isAndroid = /android/i.test(navigator.userAgent)
+		if (isAndroid) {
+			const {generateScript} = await import('./litert-lm')
+			return generateScript({
 				topic: effectiveTopic,
 				quality: settings.quality,
 				style: settings.style,
-				linkContent: linkContent || null,
-				mode: mode || null,
-			})
-		} catch (err) {
-			console.error('[Tauri] generate_script_local failed:', err)
-			const message = err instanceof Error ? err.message : String(err)
-			throw new Error(message || 'Local LLM-Anfrage fehlgeschlagen', {
-				cause: err,
+				linkContent: linkContent || undefined,
+				mode: mode || undefined,
 			})
 		}
 	}
@@ -73,13 +70,6 @@ export function loadSettings(): AppSettings {
 		const saved = localStorage.getItem('ai-radio-settings')
 		if (saved) {
 			const loaded = {...DEFAULT_SETTINGS, ...JSON.parse(saved)}
-			// Auto-switch away from local provider on Android (sidecar not available)
-			if (
-				/android/i.test(navigator.userAgent) &&
-				loaded.apiProvider === 'local'
-			) {
-				loaded.apiProvider = 'kilo'
-			}
 			return loaded
 		}
 	} catch (e) {

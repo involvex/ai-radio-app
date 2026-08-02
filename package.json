@@ -22,7 +22,7 @@
 	},
 	"prettier": "@involvex/prettier-config",
 	"dependencies": {
-		"@mlc-ai/web-llm": "^0.2.84",
+		"@mediapipe/tasks-genai": "^0.10.29",
 		"@tauri-apps/api": "^2.0.0",
 		"@tauri-apps/plugin-shell": "^2.0.0",
 		"cheerio": "^1.0.0",

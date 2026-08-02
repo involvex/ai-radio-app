@@ -1,27 +1,25 @@
 <script lang="ts">
 import {
-  listLocalModels,
-  downloadModel,
-  deleteModel,
-  pickModelFile,
-  startLocalLLM,
-  stopLocalLLM,
-  onDownloadProgress,
-  onLocalLLMReady,
-  onLocalLLMError,
+  checkWebGPUAvailability,
+  loadModelFromUrl,
+  loadModelFromFile,
+  unloadModel,
+  isModelReady,
+  getCurrentModelKey,
   AVAILABLE_MODELS,
-  type LocalModel,
-  type DownloadProgress,
-} from '../lib/local-llm'
+  type ModelKey,
+} from '../lib/litert-lm'
 import {loadSettings, saveSettings} from '../lib/settings'
 
 const isAndroid = /android/i.test(navigator.userAgent)
 
-let installedModels: LocalModel[] = $state([])
-let activeModelPath: string = $state('')
-let llmStatus: 'NOT RUNNING' | 'STARTING...' | 'READY' | 'ERROR' = $state('NOT RUNNING')
+let webgpuSupported = $state(false)
+let webgpuReason = $state('')
+let llmStatus: 'CHECKING...' | 'NOT RUNNING' | 'LOADING...' | 'READY' | 'ERROR' = $state('CHECKING...')
 let errorMessage = $state('')
-let downloading: Record<string, {progress: number; total: number}> = $state({})
+let selectedModelKey: ModelKey = $state('gemma3-1b-int4')
+let downloadProgress = $state(0)
+let fileInput: HTMLInputElement | null = $state(null)
 
 const modelEntries = Object.entries(AVAILABLE_MODELS)
 
@@ -31,128 +29,102 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1_000).toFixed(0)} KB`
 }
 
-async function refreshModels() {
-  try {
-    installedModels = await listLocalModels()
-    const settings = loadSettings()
-    activeModelPath = settings.localModelPath || ''
-  } catch (e) {
-    console.error('Failed to list models:', e)
+async function checkWebGPU() {
+  llmStatus = 'CHECKING...'
+  const result = await checkWebGPUAvailability()
+  webgpuSupported = result.supported
+  webgpuReason = result.reason || ''
+  if (!result.supported) {
+    llmStatus = 'ERROR'
+    errorMessage = result.reason || 'WebGPU nicht verfügbar'
+  } else {
+    llmStatus = 'NOT RUNNING'
   }
 }
 
-async function handleDownload(url: string, filename: string) {
-  downloading = {...downloading, [filename]: {progress: 0, total: 0}}
-  try {
-    await downloadModel(url, filename)
-    await refreshModels()
-  } catch (e) {
-    console.error('Download failed:', e)
-  } finally {
-    const d = {...downloading}
-    delete d[filename]
-    downloading = d
-  }
-}
-
-async function handleDelete(filename: string) {
-  try {
-    await deleteModel(filename)
-    if (activeModelPath && activeModelPath.includes(filename)) {
-      activeModelPath = ''
-      const settings = loadSettings()
-      settings.localModelPath = ''
-      saveSettings(settings)
-    }
-    await refreshModels()
-  } catch (e) {
-    console.error('Delete failed:', e)
-  }
-}
-
-function selectModel(path: string) {
-  activeModelPath = path
-  const settings = loadSettings()
-  settings.localModelPath = path
-  saveSettings(settings)
-}
-
-async function handlePickFile() {
-  try {
-    const picked = await pickModelFile()
-    if (picked) {
-      selectModel(picked)
-      await refreshModels()
-    }
-  } catch (e) {
-    console.error('File pick failed:', e)
-  }
-}
-
-async function handleStart() {
-  if (!activeModelPath) return
-  llmStatus = 'STARTING...'
+async function handleDownload(modelKey: ModelKey) {
+  llmStatus = 'LOADING...'
+  downloadProgress = 0
   errorMessage = ''
+
   try {
-    await startLocalLLM(activeModelPath)
+    await loadModelFromUrl(modelKey, (progress) => {
+      downloadProgress = progress
+    })
+    llmStatus = 'READY'
+    const settings = loadSettings()
+    settings.localModelKey = modelKey
+    saveSettings(settings)
   } catch (e) {
     llmStatus = 'ERROR'
     errorMessage = e instanceof Error ? e.message : String(e)
   }
 }
 
-async function handleStop() {
+async function handlePickFile() {
+  if (!fileInput) return
+  fileInput.click()
+}
+
+async function handleFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  llmStatus = 'LOADING...'
+  downloadProgress = 0
+  errorMessage = ''
+
   try {
-    await stopLocalLLM()
+    await loadModelFromFile(file, (progress) => {
+      downloadProgress = progress
+    })
+    llmStatus = 'READY'
+  } catch (e) {
+    llmStatus = 'ERROR'
+    errorMessage = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (fileInput) fileInput.value = ''
+  }
+}
+
+async function handleUnload() {
+  try {
+    await unloadModel()
     llmStatus = 'NOT RUNNING'
     errorMessage = ''
   } catch (e) {
-    console.error('Stop failed:', e)
+    console.error('Unload failed:', e)
   }
+}
+
+function selectModel(modelKey: ModelKey) {
+  selectedModelKey = modelKey
 }
 
 $effect(() => {
-  const unlistenProgress = onDownloadProgress((progress: DownloadProgress) => {
-    downloading = {
-      ...downloading,
-      [progress.filename]: {progress: progress.downloaded, total: progress.total},
-    }
-  })
-
-  const unlistenReady = onLocalLLMReady(() => {
-    llmStatus = 'READY'
-    errorMessage = ''
-  })
-
-  const unlistenError = onLocalLLMError((error: string) => {
-    llmStatus = 'ERROR'
-    errorMessage = error
-  })
-
-  refreshModels()
-
-  return () => {
-    unlistenProgress.then((fn) => fn())
-    unlistenReady.then((fn) => fn())
-    unlistenError.then((fn) => fn())
-  }
+  checkWebGPU()
 })
 
-function isModelInstalled(filename: string): boolean {
-  return installedModels.some((m) => m.filename === filename)
-}
+$effect(() => {
+  if (isModelReady()) {
+    llmStatus = 'READY'
+  }
+})
 </script>
 
 <div class="model-manager">
   <h3>═══ LOCAL LLM ═══</h3>
 
-  {#if isAndroid}
-    <div class="android-warning">
-      <span class="warning-icon">⚠️</span>
-      <span>Local LLM ist auf Android nicht verfügbar.</span>
-      <span class="warning-hint">Bitte verwende einen Cloud-Anbieter (Kilo, OpenCode, Gemini).</span>
-    </div>
-  {:else}
+  <div class="status-bar">
+    <span class="status-label">WebGPU:</span>
+    <span class="status-value" class:supported={webgpuSupported} class:unsupported={!webgpuSupported}>
+      {webgpuSupported ? 'VERFÜGBAR' : 'NICHT VERFÜGBAR'}
+    </span>
+    {#if !webgpuSupported && webgpuReason}
+      <span class="error-text">{webgpuReason}</span>
+    {/if}
+  </div>
 
   <div class="status-bar">
     <span class="status-label">STATUS:</span>
@@ -160,7 +132,7 @@ function isModelInstalled(filename: string): boolean {
       class="status-value"
       class:ready={llmStatus === 'READY'}
       class:error={llmStatus === 'ERROR'}
-      class:starting={llmStatus === 'STARTING...'}
+      class:loading={llmStatus === 'LOADING...' || llmStatus === 'CHECKING...'}
     >
       {llmStatus}
     </span>
@@ -169,88 +141,87 @@ function isModelInstalled(filename: string): boolean {
     {/if}
   </div>
 
-  <div class="controls-row">
-    <button
-      class="btn-ctrl"
-      disabled={llmStatus === 'STARTING...' || !activeModelPath}
-      onclick={handleStart}
-    >
-      [ ▶ START ]
-    </button>
-    <button class="btn-ctrl" disabled={llmStatus === 'NOT RUNNING'} onclick={handleStop}>
-      [ ⏹ STOP ]
-    </button>
-  </div>
-
-  <div class="section">
-    <h4>> DOWNLOAD MODELS</h4>
-    {#each modelEntries as [key, model]}
-      <div class="model-row">
-        <div class="model-info">
-          <span class="model-name">{model.name}</span>
-          <span class="model-meta">{formatSize(model.sizeBytes)} — {model.description}</span>
-          {#if downloading[model.filename]}
-            <div class="progress-bar">
-              <div
-                class="progress-fill"
-                style="width: {downloading[model.filename].total
-                  ? (downloading[model.filename].progress / downloading[model.filename].total) *
-                    100
-                  : 0}%"
-              ></div>
-            </div>
-          {/if}
-        </div>
-        <button
-          class="btn-sm"
-          disabled={isModelInstalled(model.filename) || !!downloading[model.filename]}
-          onclick={() => handleDownload(model.url, model.filename)}
-        >
-          {isModelInstalled(model.filename)
-            ? '[ INSTALLED ]'
-            : downloading[model.filename]
-              ? '[ DOWNLOADING... ]'
-              : '[ DOWNLOAD ]'}
-        </button>
+  {#if llmStatus === 'LOADING...'}
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {downloadProgress}%"></div>
       </div>
-    {/each}
-  </div>
+      <span class="progress-text">{downloadProgress}%</span>
+    </div>
+  {/if}
 
-  <div class="section">
-    <h4>> INSTALLED MODELS</h4>
-    {#if installedModels.length === 0}
-      <p class="empty">No models installed.</p>
-    {:else}
-      {#each installedModels as model}
+  {#if webgpuSupported}
+    <div class="controls-row">
+      {#if llmStatus === 'NOT RUNNING' || llmStatus === 'CHECKING...' || llmStatus === 'ERROR'}
+        <button
+          class="btn-ctrl"
+          onclick={() => handleDownload(selectedModelKey)}
+        >
+          [ ▶ START ]
+        </button>
+      {:else if llmStatus === 'READY'}
+        <button class="btn-ctrl btn-stop" onclick={handleUnload}>
+          [ ⏹ STOP ]
+        </button>
+      {/if}
+    </div>
+
+    <div class="section">
+      <h4>> MODELL AUSWÄHLEN</h4>
+      {#each modelEntries as [key, model]}
         <div class="model-row">
           <label class="model-radio">
             <input
               type="radio"
               name="active-model"
-              checked={activeModelPath === model.path}
-              onchange={() => selectModel(model.path)}
+              checked={selectedModelKey === key}
+              onchange={() => selectModel(key as ModelKey)}
+              disabled={llmStatus === 'LOADING...' || llmStatus === 'READY'}
             />
             <div class="model-info">
-              <span class="model-name">{model.filename}</span>
-              <span class="model-meta">{formatSize(model.size_bytes)}</span>
+              <span class="model-name">{model.name}</span>
+              <span class="model-meta">{formatSize(model.sizeBytes)} — {model.description}</span>
             </div>
           </label>
-          <button class="btn-sm btn-delete" onclick={() => handleDelete(model.filename)}>
-            [ 🗑 ]
-          </button>
+          {#if llmStatus !== 'LOADING...' && llmStatus !== 'READY'}
+            <button
+              class="btn-sm"
+              disabled={llmStatus === 'LOADING...'}
+              onclick={() => handleDownload(key as ModelKey)}
+            >
+              [ DOWNLOAD ]
+            </button>
+          {/if}
         </div>
       {/each}
-    {/if}
-  </div>
+    </div>
 
-  <div class="section">
-    <button class="btn-ctrl btn-pick" onclick={handlePickFile}>
-      [ 📁 PICK .GGUF FILE ]
-    </button>
-    <button class="btn-ctrl btn-refresh" onclick={refreshModels}>
-      [ 🔄 REFRESH ]
-    </button>
-  </div>
+    <div class="section">
+      <h4>> EIGENES MODELL</h4>
+      <input
+        type="file"
+        accept=".task"
+        bind:this={fileInput}
+        onchange={handleFileSelect}
+        style="display: none;"
+      />
+      <button class="btn-ctrl btn-pick" onclick={handlePickFile}>
+        [ 📁 .TASK DATEI AUSWÄHLEN ]
+      </button>
+    </div>
+
+    {#if getCurrentModelKey()}
+      <div class="section loaded-model">
+        <h4>> GELADENES MODELL</h4>
+        <span class="model-name">{getCurrentModelKey()}</span>
+      </div>
+    {/if}
+  {:else}
+    <div class="section">
+      <p class="hint warning">
+        Local LLM benötigt WebGPU. Bitte verwende Chrome 113+ oder einen kompatiblen Browser.
+      </p>
+    </div>
   {/if}
 </div>
 
@@ -269,34 +240,11 @@ function isModelInstalled(filename: string): boolean {
     text-shadow: 0 0 5px #00ff41;
   }
 
-  .android-warning {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    background: #1a1200;
-    border: 1px solid #664400;
-    color: #ffaa00;
-    font-size: 0.8rem;
-    text-align: center;
-    margin-bottom: 1rem;
-  }
-
-  .android-warning .warning-icon {
-    font-size: 1.5rem;
-  }
-
-  .android-warning .warning-hint {
-    font-size: 0.75rem;
-    color: #886622;
-  }
-
   .status-bar {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
     padding: 0.5rem;
     background: #0a0a0a;
     border: 1px solid #003311;
@@ -313,6 +261,15 @@ function isModelInstalled(filename: string): boolean {
     font-weight: bold;
   }
 
+  .status-value.supported {
+    color: #00ff41;
+    text-shadow: 0 0 5px #00ff41;
+  }
+
+  .status-value.unsupported {
+    color: #ff3333;
+  }
+
   .status-value.ready {
     color: #00ff41;
     text-shadow: 0 0 5px #00ff41;
@@ -322,7 +279,7 @@ function isModelInstalled(filename: string): boolean {
     color: #ff3333;
   }
 
-  .status-value.starting {
+  .status-value.loading {
     color: #ffaa00;
     animation: blink 1s infinite;
   }
@@ -341,6 +298,35 @@ function isModelInstalled(filename: string): boolean {
     50% {
       opacity: 0.5;
     }
+  }
+
+  .progress-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    background: #0a0a0a;
+    border: 1px solid #003311;
+  }
+
+  .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: #003311;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: #00ff41;
+    transition: width 0.3s;
+  }
+
+  .progress-text {
+    color: #00aa2a;
+    font-size: 0.7rem;
+    min-width: 40px;
+    text-align: right;
   }
 
   .controls-row {
@@ -369,6 +355,16 @@ function isModelInstalled(filename: string): boolean {
   .btn-ctrl:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .btn-stop {
+    border-color: #ff3333;
+    color: #ff3333;
+  }
+
+  .btn-stop:hover {
+    background: #ff3333;
+    color: #0a0a0a;
   }
 
   .section {
@@ -403,6 +399,10 @@ function isModelInstalled(filename: string): boolean {
     accent-color: #00ff41;
   }
 
+  .model-radio input:disabled {
+    accent-color: #555;
+  }
+
   .model-info {
     display: flex;
     flex-direction: column;
@@ -422,19 +422,6 @@ function isModelInstalled(filename: string): boolean {
   .model-meta {
     font-size: 0.65rem;
     color: #005511;
-  }
-
-  .progress-bar {
-    width: 100%;
-    height: 3px;
-    background: #003311;
-    margin-top: 0.25rem;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: #00ff41;
-    transition: width 0.3s;
   }
 
   .btn-sm {
@@ -459,20 +446,23 @@ function isModelInstalled(filename: string): boolean {
     cursor: not-allowed;
   }
 
-  .btn-delete:hover {
-    border-color: #ff3333;
-    color: #ff3333;
+  .btn-pick {
+    margin-top: 0.5rem;
   }
 
-  .empty {
-    color: #005511;
-    font-size: 0.75rem;
+  .loaded-model {
     padding: 0.5rem;
-    text-align: center;
+    background: #0a0a0a;
+    border: 1px solid #003311;
   }
 
-  .btn-pick,
-  .btn-refresh {
-    margin-right: 0.5rem;
+  .hint {
+    font-size: 0.75rem;
+    color: #00aa2a;
+    margin-bottom: 0.75rem;
+  }
+
+  .hint.warning {
+    color: #ffaa00;
   }
 </style>
