@@ -2,6 +2,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+mod local_llm;
 mod model_manager;
 
 #[cfg(desktop)]
@@ -70,16 +71,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         builder = builder.plugin(tauri_plugin_shell::init());
     }
-    builder = builder.plugin(tauri_plugin_dialog::init());
+    builder = builder
+        .plugin(tauri_plugin_dialog::init())
+        .manage(local_llm::LocalLlmState::default());
 
 Ok(builder
   .invoke_handler(tauri::generate_handler![
     tts_http_fallback,
     generate_script,
-    generate_script_local,
     fetch_link_content,
     suggest_related_topic,
     test_sidecar,
+    local_llm::start_local_llm,
+    local_llm::stop_local_llm,
+    local_llm::generate_script_local,
     model_manager::list_local_models,
     model_manager::download_model,
     model_manager::delete_model,
@@ -408,16 +413,6 @@ async fn fetch_link_content(url: String) -> Result<String, String> {
   } else {
     Ok(text)
   }
-}
-
-#[tauri::command]
-async fn generate_script_local(
-    _model_path: String,
-    topic: String,
-) -> Result<String, String> {
-  eprintln!("[generate_script_local] called with topic={}", topic);
-  // On-device LLM not yet implemented - use API mode
-  Err("On-device LLM not yet implemented. Please use API mode with a valid API key.".to_string())
 }
 
 #[tauri::command]
