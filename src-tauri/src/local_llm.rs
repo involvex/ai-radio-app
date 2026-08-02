@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 pub struct LocalLlmState {
@@ -49,7 +50,7 @@ pub async fn start_local_llm(
         "--no-warmup".to_string(),
     ];
 
-    let (_rx, child) = sidecar_command
+    let (mut rx, child) = sidecar_command
         .args(&args)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -59,6 +60,23 @@ pub async fn start_local_llm(
 
     let url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::new();
+
+    // Spawn a monitoring task that listens for Terminated events on the receiver.
+    // This covers both startup failures and post-startup crashes.
+    let app_monitor = app.clone();
+    let monitor_handle = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            if let CommandEvent::Terminated(payload) = event {
+                let msg = format!(
+                    "Sidecar process exited unexpectedly (code: {:?})",
+                    payload.code
+                );
+                app_monitor.emit("local-llm-error", msg.clone()).ok();
+                break;
+            }
+        }
+    });
+
     for _ in 0..30 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if let Ok(resp) = client.get(&url).send().await {
@@ -69,6 +87,8 @@ pub async fn start_local_llm(
         }
     }
 
+    // Startup timed out — abort the monitor and clean up
+    monitor_handle.abort();
     Err("Local LLM failed to start within 15 seconds".to_string())
 }
 

@@ -52,10 +52,11 @@ pub async fn download_model(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join(&filename);
 
-    // Path traversal guard - check resolved path is within models dir
-    let resolved = dest.to_string_lossy().to_string();
-    let models_root = dir.to_string_lossy().to_string();
-    if !resolved.starts_with(&models_root) {
+    // Path traversal guard - check parent dir is within models dir
+    let parent = dest.parent().ok_or("Invalid path")?;
+    let parent_canonical = parent.canonicalize().map_err(|e| e.to_string())?;
+    let dir_canonical = dir.canonicalize().map_err(|e| e.to_string())?;
+    if parent_canonical != dir_canonical {
         return Err("Invalid filename".to_string());
     }
 
@@ -110,14 +111,13 @@ pub async fn delete_model(app: AppHandle, filename: String) -> Result<(), String
     let dir = models_dir(&app)?;
     let path = dir.join(&filename);
 
-    // Path traversal guard - check resolved path is within models dir
-    let resolved = path.to_string_lossy().to_string();
-    let models_root = dir.to_string_lossy().to_string();
-    if !resolved.starts_with(&models_root) {
-        return Err("Invalid filename".to_string());
-    }
-
+    // Path traversal guard - canonicalize and check path is within models dir
     if path.exists() {
+        let path_canonical = path.canonicalize().map_err(|e| e.to_string())?;
+        let dir_canonical = dir.canonicalize().map_err(|e| e.to_string())?;
+        if !path_canonical.starts_with(&dir_canonical) {
+            return Err("Invalid filename".to_string());
+        }
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     Ok(())

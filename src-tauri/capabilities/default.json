@@ -16,6 +16,10 @@
 			]
 		},
 		"shell:allow-spawn",
-		"shell:allow-kill"
+		"shell:allow-kill",
+		"dialog:allow-open",
+		"dialog:allow-save",
+		"dialog:allow-ask",
+		"dialog:allow-message"
 	]
 }
