@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandEvent;
@@ -31,10 +32,14 @@ pub async fn start_local_llm(
     let port = state.port;
     let model = model_path.clone();
 
+    // Resolve the llama-server binary path
+    // During development: looks in src-tauri/binaries/ relative to workspace
+    // For production: would need proper bundling
+    let binary_path = resolve_llama_server_path(&app)?;
+
     let sidecar_command = app
         .shell()
-        .sidecar("binaries/llama-server")
-        .map_err(|e| e.to_string())?;
+        .command(&binary_path);
 
     let args = vec![
         "--model".to_string(),
@@ -228,5 +233,67 @@ fn temperature_for_quality(quality: &str) -> f32 {
         "long" => 0.7,
         "chill" => 0.6,
         _ => 0.8,
+    }
+}
+
+/// Resolves the path to the llama-server binary.
+/// During development, looks in src-tauri/binaries/ relative to the workspace root.
+fn resolve_llama_server_path(app: &AppHandle) -> Result<String, String> {
+    let extension = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
+
+    let binary_name = format!("llama-server{}{}", target_triple_suffix(), extension);
+
+    // Try multiple possible locations
+    let possible_paths = vec![
+        // Development path: src-tauri/binaries/
+        PathBuf::from("src-tauri/binaries").join(&binary_name),
+        // Relative to current dir
+        PathBuf::from("binaries").join(&binary_name),
+        // Resource dir (for bundled apps)
+        app.path()
+            .resource_dir()
+            .ok()
+            .map(|p| p.join("binaries").join(&binary_name))
+            .unwrap_or_default(),
+    ];
+
+    for path in &possible_paths {
+        if path.exists() {
+            return path
+                .to_str()
+                .ok_or("Invalid binary path".to_string())
+                .map(|s| s.to_string());
+        }
+    }
+
+    Err(format!(
+        "llama-server binary not found. Looked in: {:?}",
+        possible_paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+    ))
+}
+
+/// Returns the target triple suffix for the current platform.
+fn target_triple_suffix() -> &'static str {
+    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "-x86_64-pc-windows-msvc"
+    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        "-aarch64-pc-windows-msvc"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "-x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "-aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "-x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "-aarch64-apple-darwin"
+    } else {
+        ""
     }
 }
