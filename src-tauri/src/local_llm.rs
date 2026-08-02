@@ -25,7 +25,17 @@ pub async fn start_local_llm(
     app: AppHandle,
     model_path: String,
 ) -> Result<String, String> {
+    eprintln!("[start_local_llm] Starting with model_path={}", model_path);
     let state = app.state::<LocalLlmState>();
+
+    // Check for content:// URIs (Android file picker returns these)
+    if is_content_uri(&model_path) {
+        return Err(
+            "Content URI detected. On Android, please copy the .gguf file to the app's \
+             storage directory first, then use the file path instead of the content URI."
+                .to_string(),
+        );
+    }
 
     stop_local_llm_inner(&state)?;
 
@@ -33,9 +43,16 @@ pub async fn start_local_llm(
     let model = model_path.clone();
 
     // Resolve the llama-server binary path
-    // During development: looks in src-tauri/binaries/ relative to workspace
-    // For production: would need proper bundling
-    let binary_path = resolve_llama_server_path(&app)?;
+    let binary_path = match resolve_llama_server_path(&app) {
+        Ok(p) => {
+            eprintln!("[start_local_llm] Found binary at: {}", p);
+            p
+        }
+        Err(e) => {
+            eprintln!("[start_local_llm] Binary resolution failed: {}", e);
+            return Err(e);
+        }
+    };
 
     let sidecar_command = app
         .shell()
@@ -55,10 +72,16 @@ pub async fn start_local_llm(
         "--no-warmup".to_string(),
     ];
 
+    eprintln!("[start_local_llm] Spawning: {} {:?}", binary_path, args);
+
     let (mut rx, child) = sidecar_command
         .args(&args)
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let msg = format!("Failed to start sidecar: {}", e);
+            eprintln!("[start_local_llm] {}", msg);
+            msg
+        })?;
 
     *state.child.lock().unwrap() = Some(child);
     *state.model_path.lock().unwrap() = Some(model_path);
@@ -293,7 +316,14 @@ fn target_triple_suffix() -> &'static str {
         "-x86_64-apple-darwin"
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "-aarch64-apple-darwin"
+    } else if cfg!(target_os = "android") {
+        "-aarch64-linux-android"
     } else {
         ""
     }
+}
+
+/// Checks if a path is a content URI (Android content:// scheme)
+fn is_content_uri(path: &str) -> bool {
+    path.starts_with("content://")
 }
