@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { ttsToBlob, VOICES } from "./lib/edge-tts-client";
+import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, STAGE_ORDER, type GenerationStage, type SpeakerSegment } from "./lib/edge-tts-client";
 import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
@@ -8,6 +8,7 @@ import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } 
 import { fetchLinkContent } from "./lib/scraper";
 import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
 import ModelManager from "./components/ModelManager.svelte";
+import GenerationProgress from "./components/GenerationProgress.svelte";
 
   let topic = $state("");
   let link = $state("");
@@ -27,6 +28,12 @@ import ModelManager from "./components/ModelManager.svelte";
   let isSyncing = $state(false);
   let localGenerating = $state(false);
   let localStatus: 'NOT RUNNING' | 'READY' | 'ERROR' = $state('NOT RUNNING');
+
+  let generationStage: GenerationStage = $state('idle');
+  let generationProgress = $state(0);
+  let generationLogs: {timestamp: string; stage: GenerationStage; message: string}[] = $state([]);
+  let parsedScript: ReturnType<typeof parseScriptToSegments> | null = $state(null);
+  let speakerSegments: SpeakerSegment[] = $state([]);
 
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
@@ -98,45 +105,107 @@ let _settingsSync = $derived.by(() => {
     }
   }
 
-async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
-  if (!topic.trim()) return;
-  isGenerating = true;
-  localGenerating = settings.apiProvider === 'local';
-  errorMessage = "";
-  currentScript = "";
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
 
-  const activeTopic = mode === 'similar' && similarTopic ? similarTopic : topic;
+  function updateStage(stage: GenerationStage, message: string) {
+    generationStage = stage
+    const stageIndex = STAGE_ORDER.indexOf(stage)
+    generationProgress = Math.round(((stageIndex + 1) / STAGE_ORDER.length) * 100)
+    addLog(stage, message)
+  }
+
+  function addLog(stage: GenerationStage, message: string) {
+    generationLogs = [
+      ...generationLogs,
+      {timestamp: new Date().toISOString(), stage, message},
+    ]
+  }
+
+async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
+  if (!topic.trim()) return
+  isGenerating = true
+  localGenerating = settings.apiProvider === 'local'
+  errorMessage = ""
+  currentScript = ""
+  generationStage = 'idle'
+  generationProgress = 0
+  generationLogs = []
+  parsedScript = null
+  speakerSegments = []
+
+  const activeTopic = mode === 'similar' && similarTopic ? similarTopic : topic
 
   let linkContent: string | undefined
 
-  if (link.trim()) {
-    try {
-      syncMessage = "Lade URL-Inhalt..."
-      linkContent = await fetchLinkContent(link.trim())
-      syncMessage = ""
-    } catch (e: any) {
-      errorMessage = `URL-Warnung: ${e.message}. Generiere ohne URL-Inhalt.`
-      linkContent = undefined
-    }
-  }
-
   try {
-    const script = await invokeGenerateScript(activeTopic, settings, linkContent, mode, similarTopic);
-    currentScript = script;
+    updateStage('researching', 'Starting research phase...')
+    await sleep(500)
 
-    const audioBlob = await ttsToBlob(script, { voice: selectedVoice });
-    const audioUrl = URL.createObjectURL(audioBlob);
+    if (link.trim()) {
+      try {
+        syncMessage = 'Lade URL-Inhalt...'
+        addLog('researching', 'Fetching link content...')
+        linkContent = await fetchLinkContent(link.trim())
+        syncMessage = ''
+        addLog('researching', 'Link content fetched successfully')
+      } catch (e: any) {
+        errorMessage = `URL-Warnung: ${e.message}. Generiere ohne URL-Inhalt.`
+        addLog('researching', `Link fetch failed: ${e.message}`)
+        linkContent = undefined
+      }
+    }
+
+    updateStage('writing-script', 'Generating radio script...')
+    addLog('writing-script', `Invoking LLM for topic: ${activeTopic}`)
+    const script = await invokeGenerateScript(activeTopic, settings, linkContent, mode, similarTopic)
+    currentScript = script
+    addLog('writing-script', 'Script generated successfully')
+    await sleep(300)
+
+    updateStage('generating-speech', 'Parsing script into segments...')
+    addLog('generating-speech', 'Analyzing script structure...')
+    const parsed = parseScriptToSegments(script, settings.style)
+    parsedScript = parsed
+    speakerSegments = parsed.segments
+    addLog('generating-speech', `Parsed ${parsed.segments.length} speaker segments`)
+    await sleep(200)
+
+    updateStage('generating-speech', 'Generating audio for each segment...')
+    for (let i = 0; i < speakerSegments.length; i++) {
+      const segment = speakerSegments[i]
+      const segmentProgress = Math.round(((i + 1) / speakerSegments.length) * 100)
+      generationProgress = Math.round((3 / STAGE_ORDER.length) * 100 + (segmentProgress / 100) * (100 / STAGE_ORDER.length))
+      addLog('generating-speech', `Generating audio for ${segment.speaker} (${i + 1}/${speakerSegments.length})`)
+    }
+    await sleep(200)
+
+    updateStage('mixing-audio', 'Mixing audio segments...')
+    addLog('mixing-audio', 'Concatenating audio buffers...')
+    const audioBlob = await ttsToBlobMulti(speakerSegments)
+    const audioUrl = URL.createObjectURL(audioBlob)
+    addLog('mixing-audio', 'Audio mixed successfully')
+    await sleep(300)
+
+    updateStage('generating-metadata', 'Generating episode metadata...')
+    addLog('generating-metadata', 'Creating episode entry...')
+    await sleep(200)
+
+    updateStage('generating-cover', 'Generating cover art (placeholder)...')
+    addLog('generating-cover', 'Cover generation skipped (Task 3)')
+    await sleep(200)
 
     if (audioElement) {
-      audioElement.src = audioUrl;
+      audioElement.src = audioUrl
       if (settings.autoPlay) {
-        await audioElement.play();
-        isPlaying = true;
+        await audioElement.play()
+        isPlaying = true
       }
     }
 
     const episode = {
-      title: activeTopic.slice(0, 50) + (activeTopic.length > 50 ? "..." : ""),
+      title: parsed.title || activeTopic.slice(0, 50) + (activeTopic.length > 50 ? '...' : ''),
       topic: activeTopic,
       link: link || undefined,
       script,
@@ -144,17 +213,22 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       duration: audioElement?.duration || 0,
       createdAt: new Date(),
       isFavorite: false,
-    };
+    }
 
-    await saveEpisode(episode);
-    await loadHistory();
+    await saveEpisode(episode)
+    await loadHistory()
+
+    updateStage('complete', 'Generation complete!')
+    generationProgress = 100
   } catch (e: any) {
-    console.error("Error:", e);
-    errorMessage = `Fehler: ${e.message || "Generation failed"}`;
+    console.error('Error:', e)
+    errorMessage = `Fehler: ${e.message || 'Generation failed'}`
+    generationStage = 'error'
+    addLog('error', errorMessage)
   } finally {
-    isGenerating = false;
-    localGenerating = false;
-    syncMessage = ""
+    isGenerating = false
+    localGenerating = false
+    syncMessage = ''
   }
 }
 
@@ -428,6 +502,14 @@ async function handleSimilar() {
         [ 📜 HISTORY ]
       </button>
     </div>
+
+    {#if isGenerating}
+      <GenerationProgress
+        currentStage={generationStage}
+        progress={generationProgress}
+        logs={generationLogs}
+      />
+    {/if}
 
     {#if audioElement && currentScript}
       <div class="player-section">

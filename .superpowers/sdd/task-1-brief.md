@@ -1,86 +1,94 @@
-## Task 1: Prebuilt Binaries & Sidecar Setup (Desktop)
+# Task 1: Multi-Speaker TTS & Generation Stages
 
-**Files:**
+## Files to Create/Modify
 
-- Create: `src-tauri/binaries/llama-server-x86_64-pc-windows-msvc.exe`
-- Modify: `src-tauri/tauri.conf.json`
-- Modify: `src-tauri/capabilities/default.json`
+**Create:**
 
-**Interfaces:**
+- `src/lib/generation-stages.ts`
+- `src/components/GenerationProgress.svelte`
 
-- Consumes: Prebuilt llama-server binary from llama.cpp releases
-- Produces: Sidecar running at `http://127.0.0.1:8080` with OpenAI-compatible API
+**Modify:**
 
-- [ ] **Step 1: Download prebuilt llama-server binary**
+- `src/lib/edge-ts-client.ts` (add multi-speaker functions)
+- `src/App.svelte` (integrate staged generation)
 
-Download the latest `llama-server` binary for Windows x64 from:
-`https://github.com/ggml-org/llama.cpp/releases`
+## Interfaces
 
-Select a release with GGUF support (e.g., b5590 or newer). Download `llama-server-x86_64-pc-windows-msvc.exe` (or the zip containing it).
+**Consumes:**
 
-Place it in `src-tauri/binaries/` with the target triple suffix:
+- `settings.ts` (AppSettings)
+- `topics.ts` (getRandomTopic)
 
-```
-src-tauri/binaries/llama-server-x86_64-pc-windows-msvc.exe
-```
+**Produces:**
 
-- [ ] **Step 2: Configure sidecar in tauri.conf.json**
+- `GenerationStage[]` type
+- `SpeakerSegment[]` type
+- `ParsedScript` type
+- `ttsToBlobMulti(speakers: SpeakerSegment[])`
+- `parseScriptToSegments(script: string, style: string)`
 
-Add `externalBin` to the bundle configuration:
+## Steps
 
-```json
-{
-	"bundle": {
-		"externalBin": ["binaries/llama-server"]
-	}
-}
-```
+### Step 1: Define generation stages and speaker types
 
-Note: Tauri automatically appends the target triple and `.exe` suffix at build time.
+Create `src/lib/generation-stages.ts` with:
 
-- [ ] **Step 3: Add shell permissions for sidecar**
+- `GenerationStage` type (idle, researching, writing-script, generating-speech, mixing-audio, generating-metadata, generating-cover, complete, error)
+- `STAGE_ORDER` array
+- `STAGE_LABELS` record
+- `SpeakerSegment` interface (speaker, text, voice, effect, startTime, endTime)
+- `ParsedScript` interface (segments, totalDuration, title, summary)
 
-Update `src-tauri/capabilities/default.json` to allow spawning the sidecar:
+### Step 2: Add multi-speaker TTS to edge-tts-client.ts
 
-```json
-{
-	"permissions": [
-		"core:default",
-		{
-			"identifier": "shell:allow-execute",
-			"allow": [
-				{
-					"name": "binaries/llama-server",
-					"sidecar": true,
-					"args": true
-				}
-			]
-		},
-		"shell:allow-spawn",
-		"shell:allow-kill"
-	]
-}
-```
+Add to existing file:
 
-- [ ] **Step 4: Test sidecar can be spawned**
+- `SPEAKER_VOICES` constant mapping speakers to Edge TTS voices
+- `parseScriptToSegments(script, style)` function - parses HOST:/GUEST:/CALLER: markers
+- `ttsToBlobMulti(segments)` function - generates and concatenates audio for each segment
+- `applyTelephoneEffect(utterance)` for Web Speech fallback
 
-Create a temporary test in `src-tauri/src/lib.rs`:
+### Step 3: Create GenerationProgress component
 
-```rust
-#[tauri::command]
-async fn test_sidecar(app: tauri::AppHandle) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
-    let sidecar_command = app.shell().sidecar("binaries/llama-server").unwrap();
-    let (mut _rx, child) = sidecar_command.args(["--version"]).spawn().map_err(|e| e.to_string())?;
-    Ok("Sidecar spawned successfully".to_string())
-}
-```
+Create `src/components/GenerationProgress.svelte` with:
 
-Register this command and test by invoking it from the frontend.
+- Props: currentStage, progress (0-100), logs array
+- Visual stage list with indicators (completed=✓, active=spinner, pending=number)
+- Progress bars per stage
+- Log entries with timestamp, stage, message
 
-- [ ] **Step 5: Commit**
+### Step 4: Integrate into App.svelte
+
+Modify `src/App.svelte`:
+
+- Add imports for GenerationProgress, parseScriptToSegments, ttsToBlobMulti, STAGE_ORDER, GenerationStage, SpeakerSegment
+- Add state: generationStage, generationProgress, generationLogs, parsedScript, speakerSegments
+- Replace `tuneIn` function with staged version:
+  - Stage 1: researching (500ms)
+  - Stage 2: writing-script (invokeGenerateScript + 300ms)
+  - Stage 3: generating-speech - parse script into segments (200ms)
+  - Stage 4: generating-speech - generate per-segment audio (loop with progress)
+  - Stage 5: mixing-audio - ttsToBlobMulti (300ms)
+  - Stage 6: generating-metadata (200ms)
+  - Stage 7: generating-cover (200ms, placeholder for Task 3)
+  - Complete: updateStage('complete'), progress=100
+- Helper functions: updateStage(stage, message), addLog(stage, message), sleep(ms)
+- In template: show GenerationProgress when isGenerating
+
+### Step 5: Run lint, typecheck
 
 ```bash
-git add src-tauri/binaries/ src-tauri/tauri.conf.json src-tauri/capabilities/default.json
-git commit -m "feat: add llama.cpp sidecar binary and Tauri configuration"
+cd D:\repos\ai-radio\ai-radio && bun run lint && bun run typecheck
 ```
+
+Expected: PASS
+
+## Global Constraints
+
+- No cloud dependencies — all features work offline
+- No Python/Rust audio pipeline — use Web APIs (Web Audio, Web Speech, Canvas)
+- Bundle size < 50MB — avoid heavy dependencies
+- Tauri v2 compatible — sidecar optional but not required
+- Svelte 5 runes only — no legacy options API
+- Bun >= 1.3.0 — for all Node operations
+- Preserve terminal/hacker aesthetic — dark theme, scanlines, monospace

@@ -2,6 +2,8 @@ const baseUrl = `speech.platform.bing.com/consumer/speech/synthesize/readaloud`
 const EDGE_TTS_TOKEN =
 	import.meta.env.VITE_EDGE_TTS_TOKEN || '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
 
+import type {SpeakerSegment} from './generation-stages'
+
 function uuid() {
 	return crypto.randomUUID().replaceAll('-', '')
 }
@@ -242,6 +244,12 @@ function findSequenceIndex(data: Uint8Array, sequence: Uint8Array): number {
 	return -1
 }
 
+export const SPEAKER_VOICES = {
+	HOST: 'de-DE-KillianNeural',
+	GUEST: 'de-DE-FreyaNeural',
+	CALLER: 'de-DE-ConradNeural',
+}
+
 export const VOICES = {
 	german: [
 		{id: 'de-DE-KillianNeural', name: 'Killian (Male)', gender: 'Male'},
@@ -259,3 +267,120 @@ export const VOICES = {
 		{id: 'en-US-JennyNeural', name: 'Jenny (Female)', gender: 'Female'},
 	],
 }
+
+export function parseScriptToSegments(
+	script: string,
+	_style: string,
+): {
+	segments: SpeakerSegment[]
+	totalDuration: number
+	title: string
+	summary: string
+} {
+	const lines = script.split('\n').filter(line => line.trim().length > 0)
+	const segments: SpeakerSegment[] = []
+
+	for (const line of lines) {
+		const hostMatch = line.match(/^HOST:\s*(.+)$/i)
+		const guestMatch = line.match(/^GUEST:\s*(.+)$/i)
+		const callerMatch = line.match(/^CALLER:\s*(.+)$/i)
+
+		if (hostMatch) {
+			segments.push({
+				speaker: 'HOST',
+				text: hostMatch[1].trim(),
+				voice: SPEAKER_VOICES.HOST,
+				effect: 'normal',
+			})
+		} else if (guestMatch) {
+			segments.push({
+				speaker: 'GUEST',
+				text: guestMatch[1].trim(),
+				voice: SPEAKER_VOICES.GUEST,
+				effect: 'normal',
+			})
+		} else if (callerMatch) {
+			segments.push({
+				speaker: 'CALLER',
+				text: callerMatch[1].trim(),
+				voice: SPEAKER_VOICES.CALLER,
+				effect: 'telephone',
+			})
+		} else {
+			if (segments.length > 0) {
+				segments[segments.length - 1].text += '\n' + line.trim()
+			} else {
+				segments.push({
+					speaker: 'HOST',
+					text: line.trim(),
+					voice: SPEAKER_VOICES.HOST,
+					effect: 'normal',
+				})
+			}
+		}
+	}
+
+	const totalDuration = segments.reduce(
+		(acc, seg) => acc + estimateDuration(seg.text),
+		0,
+	)
+
+	const title = segments[0]?.text.slice(0, 50) || 'AI Radio Episode'
+	const summary = segments
+		.slice(0, 3)
+		.map(s => s.text)
+		.join(' ')
+		.slice(0, 200)
+
+	return {segments, totalDuration, title, summary}
+}
+
+function estimateDuration(text: string): number {
+	const words = text.trim().split(/\s+/).length
+	const wordsPerMinute = 150
+	return (words / wordsPerMinute) * 60
+}
+
+export async function ttsToBlobMulti(
+	segments: SpeakerSegment[],
+): Promise<Blob> {
+	const audioBuffers: ArrayBuffer[] = []
+
+	for (let i = 0; i < segments.length; i++) {
+		const segment = segments[i]
+		try {
+			const buffer = await ttsEdge(segment.text, {
+				voice: segment.voice,
+				rate: '+0%',
+				pitch: '+0Hz',
+				volume: '+0%',
+			})
+			audioBuffers.push(buffer)
+		} catch (err) {
+			console.error(`Failed to generate TTS for segment ${i}:`, err)
+			throw err
+		}
+	}
+
+	const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.byteLength, 0)
+	const result = new Uint8Array(totalLength)
+	let offset = 0
+	for (const buf of audioBuffers) {
+		result.set(new Uint8Array(buf), offset)
+		offset += buf.byteLength
+	}
+
+	return new Blob([result], {type: 'audio/mp3'})
+}
+
+function _applyTelephoneEffect(utterance: SpeechSynthesisUtterance): void {
+	utterance.pitch = Math.max(0.5, utterance.pitch * 0.7)
+	utterance.rate = Math.min(1.2, utterance.rate * 1.1)
+}
+
+export type {
+	SpeakerSegment,
+	ParsedScript,
+	GenerationStage,
+} from './generation-stages'
+export {STAGE_ORDER} from './generation-stages'
