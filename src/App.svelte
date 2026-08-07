@@ -9,6 +9,7 @@ import { fetchLinkContent } from "./lib/scraper";
 import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
 import ModelManager from "./components/ModelManager.svelte";
 import GenerationProgress from "./components/GenerationProgress.svelte";
+import AudioVisualizer from "./components/AudioVisualizer.svelte";
 
   let topic = $state("");
   let link = $state("");
@@ -553,14 +554,7 @@ async function handleSimilar() {
 
     {#if audioElement && currentScript}
       <div class="player-section">
-        <div class="visualizer">
-          {#each Array(20) as _, i}
-            <div
-              class="bar"
-              style="animation-delay: {i * 50}ms; height: {isPlaying ? Math.random() * 100 : 20}%"
-            ></div>
-          {/each}
-        </div>
+        <AudioVisualizer {audioElement} {isPlaying} barCount={40} style="bars" />
 
         <div class="progress-container">
           <span class="time">{formatTime(currentTime)}</span>
@@ -979,27 +973,6 @@ async function handleSimilar() {
     padding: 1.5rem;
     background: #111111;
     border: 1px solid #003311;
-  }
-
-  .visualizer {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 4px;
-    height: 60px;
-    margin-bottom: 1rem;
-  }
-
-  .bar {
-    width: 8px;
-    background: #00ff41;
-    animation: pulse 0.5s ease-in-out infinite alternate;
-    min-height: 4px;
-  }
-
-  @keyframes pulse {
-    from { opacity: 0.5; }
-    to { opacity: 1; }
   }
 
   .progress-container {
