@@ -60,7 +60,7 @@ export async function ttsWebSpeech(
 	})
 }
 
-async function ttsEdge(
+export async function ttsEdge(
 	text: string,
 	options: TtsOptions = {},
 ): Promise<ArrayBuffer> {
@@ -268,10 +268,7 @@ export const VOICES = {
 	],
 }
 
-export function parseScriptToSegments(
-	script: string,
-	_style: string,
-): {
+export function parseScriptToSegments(script: string): {
 	segments: SpeakerSegment[]
 	totalDuration: number
 	title: string
@@ -356,9 +353,28 @@ export async function ttsToBlobMulti(
 				volume: '+0%',
 			})
 			audioBuffers.push(buffer)
-		} catch (err) {
-			console.error(`Failed to generate TTS for segment ${i}:`, err)
-			throw err
+		} catch (edgeErr) {
+			console.error(`Edge TTS failed for segment ${i}:`, edgeErr)
+			try {
+				const httpBlob = await ttsHttpFallback(segment.text, segment.voice)
+				const arrayBuffer = await httpBlob.arrayBuffer()
+				audioBuffers.push(arrayBuffer)
+				console.log(`HTTP fallback succeeded for segment ${i}`)
+			} catch (httpErr) {
+				console.error(`HTTP TTS fallback failed for segment ${i}:`, httpErr)
+				if (!window.speechSynthesis) {
+					throw new Error(
+						`TTS unavailable for segment ${i} (Edge: ${edgeErr instanceof Error ? edgeErr.message : 'unknown error'}; HTTP: ${httpErr instanceof Error ? httpErr.message : 'unknown error'})`,
+						{cause: httpErr},
+					)
+				}
+				await ttsWebSpeech(segment.text, {
+					voice: segment.voice,
+					rate: '+0%',
+					pitch: '+0Hz',
+				})
+				audioBuffers.push(new ArrayBuffer(0))
+			}
 		}
 	}
 
@@ -383,4 +399,4 @@ export type {
 	ParsedScript,
 	GenerationStage,
 } from './generation-stages'
-export {STAGE_ORDER} from './generation-stages'
+export {STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX} from './generation-stages'

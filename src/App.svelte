@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, STAGE_ORDER, type GenerationStage, type SpeakerSegment } from "./lib/edge-tts-client";
+import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage, type SpeakerSegment } from "./lib/edge-tts-client";
 import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
@@ -173,17 +173,57 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
     await sleep(200)
 
     updateStage('generating-speech', 'Generating audio for each segment...')
+    const audioBuffers: ArrayBuffer[] = []
     for (let i = 0; i < speakerSegments.length; i++) {
       const segment = speakerSegments[i]
       const segmentProgress = Math.round(((i + 1) / speakerSegments.length) * 100)
-      generationProgress = Math.round((3 / STAGE_ORDER.length) * 100 + (segmentProgress / 100) * (100 / STAGE_ORDER.length))
+      generationProgress = Math.round((GENERATING_SPEECH_STAGE_INDEX / STAGE_ORDER.length) * 100 + (segmentProgress / 100) * (100 / STAGE_ORDER.length))
       addLog('generating-speech', `Generating audio for ${segment.speaker} (${i + 1}/${speakerSegments.length})`)
+      try {
+        const buffer = await ttsEdge(segment.text, {
+          voice: segment.voice,
+          rate: '+0%',
+          pitch: '+0Hz',
+          volume: '+0%',
+        })
+        audioBuffers.push(buffer)
+      } catch (edgeErr) {
+        console.error(`Edge TTS failed for segment ${i}:`, edgeErr)
+        try {
+          const httpBlob = await ttsHttpFallback(segment.text, segment.voice)
+          const arrayBuffer = await httpBlob.arrayBuffer()
+          audioBuffers.push(arrayBuffer)
+          addLog('generating-speech', `HTTP fallback succeeded for ${segment.speaker}`)
+        } catch (httpErr) {
+          console.error(`HTTP TTS fallback failed for segment ${i}:`, httpErr)
+          if (!window.speechSynthesis) {
+            throw new Error(
+              `TTS unavailable for segment ${i} (Edge: ${edgeErr instanceof Error ? edgeErr.message : 'unknown error'}; HTTP: ${httpErr instanceof Error ? httpErr.message : 'unknown error'})`,
+              {cause: httpErr},
+            )
+          }
+          await ttsWebSpeech(segment.text, {
+            voice: segment.voice,
+            rate: '+0%',
+            pitch: '+0Hz',
+          })
+          audioBuffers.push(new ArrayBuffer(0))
+          addLog('generating-speech', `Web Speech fallback used for ${segment.speaker}`)
+        }
+      }
     }
     await sleep(200)
 
     updateStage('mixing-audio', 'Mixing audio segments...')
     addLog('mixing-audio', 'Concatenating audio buffers...')
-    const audioBlob = await ttsToBlobMulti(speakerSegments)
+    const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.byteLength, 0)
+    const result = new Uint8Array(totalLength)
+    let offset = 0
+    for (const buf of audioBuffers) {
+      result.set(new Uint8Array(buf), offset)
+      offset += buf.byteLength
+    }
+    const audioBlob = new Blob([result], {type: 'audio/mp3'})
     const audioUrl = URL.createObjectURL(audioBlob)
     addLog('mixing-audio', 'Audio mixed successfully')
     await sleep(300)

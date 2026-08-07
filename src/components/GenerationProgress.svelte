@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {GenerationStage} from '../lib/generation-stages'
+	import {STAGE_ORDER, STAGE_LABELS} from '../lib/generation-stages'
 
 	interface LogEntry {
 		timestamp: string
@@ -12,29 +13,6 @@
 		progress: number
 		logs: LogEntry[]
 	} = $props()
-
-	const STAGE_ORDER: GenerationStage[] = [
-		'idle',
-		'researching',
-		'writing-script',
-		'generating-speech',
-		'mixing-audio',
-		'generating-metadata',
-		'generating-cover',
-		'complete',
-	]
-
-	const STAGE_LABELS: Record<GenerationStage, string> = {
-		idle: 'IDLE',
-		researching: 'RESEARCHING',
-		'writing-script': 'WRITING SCRIPT',
-		'generating-speech': 'GENERATING SPEECH',
-		'mixing-audio': 'MIXING AUDIO',
-		'generating-metadata': 'GENERATING METADATA',
-		'generating-cover': 'GENERATING COVER',
-		complete: 'COMPLETE',
-		error: 'ERROR',
-	}
 
 	function getStageStatus(stage: GenerationStage): 'completed' | 'active' | 'pending' {
 		const currentIndex = STAGE_ORDER.indexOf(currentStage)

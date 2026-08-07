@@ -32,6 +32,9 @@ export const STAGE_LABELS: Record<GenerationStage, string> = {
 	error: 'ERROR',
 }
 
+export const GENERATING_SPEECH_STAGE_INDEX =
+	STAGE_ORDER.indexOf('generating-speech')
+
 export interface SpeakerSegment {
 	speaker: 'HOST' | 'GUEST' | 'CALLER'
 	text: string
