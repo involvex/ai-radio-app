@@ -5,6 +5,7 @@ import { STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage } from
 import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
+import { createShowZip, downloadZip } from "./lib/zip-export";
 import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
 import { fetchLinkContent } from "./lib/scraper";
 import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
@@ -42,6 +43,7 @@ import { segmentsToTranscript } from "./lib/transcript-player";
   let speakerSegments: SpeakerSegment[] = $state([]);
   let transcriptLines = $state<import("./lib/transcript-player").TranscriptLine[]>([]);
   let coverDataUrl = $state<string | null>(null);
+  let currentEpisode = $state<Episode | null>(null);
 
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
@@ -274,8 +276,9 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       coverDataUrl: coverDataUrl || undefined,
     }
 
-    await saveEpisode(episode)
+    const episodeId = await saveEpisode(episode)
     await loadHistory()
+    currentEpisode = {...episode, id: episodeId}
 
     updateStage('complete', 'Generation complete!')
     generationProgress = 100
@@ -357,6 +360,7 @@ async function handleSimilar() {
     currentScript = episode.script;
     transcriptLines = segmentsToTranscript(episode.speakerSegments || [])
     coverDataUrl = episode.coverDataUrl || null;
+    currentEpisode = episode;
     if (audioElement && episode.audioUrl) {
       audioElement.src = episode.audioUrl;
       await audioElement.play();
@@ -437,6 +441,22 @@ async function handleSimilar() {
       syncMessage = `Export erfolgreich! ${data.episodes.length} Episoden exportiert.`;
     } catch (e: any) {
       syncMessage = `Export fehlgeschlagen: ${e.message}`;
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  async function handleDownloadZip(episode: Episode) {
+    try {
+      isSyncing = true;
+      syncMessage = "Erstelle ZIP-Archiv...";
+      const blob = await createShowZip(episode, episode.coverDataUrl);
+      const safeTitle = episode.title.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 50);
+      const filename = `ai-radio_${safeTitle}_${new Date(episode.createdAt).toISOString().split('T')[0]}.zip`;
+      downloadZip(blob, filename);
+      syncMessage = "ZIP-Export erfolgreich!";
+    } catch (e: any) {
+      syncMessage = `ZIP-Export fehlgeschlagen: ${e.message}`;
     } finally {
       isSyncing = false;
     }
@@ -555,6 +575,12 @@ async function handleSimilar() {
         </button>
       {/if}
 
+      {#if currentEpisode}
+        <button class="btn-secondary" onclick={() => handleDownloadZip(currentEpisode!)} disabled={isSyncing}>
+          {isSyncing ? "[ 📦 EXPORTING... ]" : "[ 📦 ZIP EXPORT ]"}
+        </button>
+      {/if}
+
       <button class="btn-history" onclick={() => {
         showHistory = !showHistory;
         if (showHistory) window.history.pushState({panel: 'history'}, '');
@@ -653,6 +679,9 @@ async function handleSimilar() {
               </div>
               <div class="episode-actions">
                 <button onclick={() => playEpisode(episode)}>[ ▶ ]</button>
+                <button onclick={() => handleDownloadZip(episode)} disabled={isSyncing}>
+                  {isSyncing ? "[ 📦... ]" : "[ 📦 ]"}
+                </button>
                 <button onclick={() => toggleFavorite(episode)}>
                   [{episode.isFavorite ? "⭐" : "☆"}]
                 </button>
