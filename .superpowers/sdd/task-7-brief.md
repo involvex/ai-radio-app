@@ -1,53 +1,57 @@
-## Task 7: Integrate into Script Generation Flow
+# Task 7: Enhanced Topic Suggestions & Similar Flow
 
-**Files:**
+## Files to Modify
 
-- Modify: `src/App.svelte`
+**Modify:**
+- `src/lib/topics.ts` (enhance topic database)
+- `src/App.svelte` (enhance topic suggestion UI and similar flow)
 
-**Interfaces:**
+## Steps
 
-- Consumes: `invokeGenerateScript` with `local` provider (Task 4), ModelManager (Task 5)
-- Produces: Updated script generation flow that works with local LLM
+### Step 1: Enhance topics.ts
 
-- [ ] **Step 1: Read current App.svelte**
+Modify `src/lib/topics.ts`:
+- Expand `TOPICS` array with 30+ diverse topics across categories:
+  - Technology: AI, Quantum Computing, Cybersecurity, Robotics, Space Tech
+  - Science: Climate, Biology, Physics, Medicine, Neuroscience
+  - Culture: Digital Art, Gaming, Streaming, Social Media, Meme Culture
+  - Society: Future of Work, Education, Privacy, Ethics, Urban Planning
+  - Fun: Weird Science, Internet Mysteries, Retro Tech, Conspiracy Theories
+- Add `TOPIC_CATEGORIES` object mapping category to topics
+- Add `getRandomTopic(category?): string` - returns random topic from category or all
+- Add `getTopicsByCategory(category): string[]` - returns topics for category
+- Add `getAllCategories(): string[]` - returns list of categories
 
-Read `src/App.svelte` to understand the current `tuneIn()` function and loading states.
+### Step 2: Enhance TopicSuggestions component in App.svelte
 
-- [ ] **Step 2: Add local generation state**
+In `src/App.svelte`:
+- Add category filter state: `selectedCategory = $state('all')`
+- Add `categories` array from `getAllCategories()`
+- Render category tabs/pills above topic suggestions
+- Filter displayed topics by selected category
+- Add "Würfel 🎲" button for random topic from current category
+- Add "Similar" button next to each topic suggestion that calls `handleSimilar(topic)`
+- Style: terminal aesthetic, active category highlighted
 
-Add a state variable for local generation:
+### Step 3: Enhance Similar Flow
 
-```typescript
-let localGenerating = $state(false)
-```
+In `handleSimilar(topic)`:
+- Generate new episode with "deeper" mode or related topic
+- Use LLM to suggest related topic based on current episode
+- Add transition animation when switching
 
-- [ ] **Step 3: Update tuneIn() to handle local provider**
-
-The `tuneIn()` function already calls `invokeGenerateScript()` which was updated in Task 4 to support the `local` provider. Verify the flow:
-
-1. When provider is 'local', set `localGenerating = true`
-2. Show a different loading message for local generation
-3. Reset `localGenerating` when done
-
-- [ ] **Step 4: Add status indicator in the main UI**
-
-Show the local LLM status in the terminal-style header area:
-
-```svelte
-{#if settings.apiProvider === 'local'}
-  <span class="local-status">
-    LOCAL AI: {localStatus}
-  </span>
-{/if}
-```
-
-- [ ] **Step 5: Test the full flow**
-
-Run `bun run typecheck` to verify TypeScript compilation.
-
-- [ ] **Step 6: Commit**
+### Step 4: Run tests
 
 ```bash
-git add src/App.svelte
-git commit -m "feat: integrate local AI provider into script generation flow"
+cd D:\repos\ai-radio\ai-radio && bun run lint && bun run typecheck
 ```
+
+Expected: PASS
+
+## Global Constraints
+
+- No cloud dependencies
+- All topics local (no API calls for suggestions)
+- Bundle size < 50MB
+- Svelte 5 runes only
+- Preserve terminal/hacker aesthetic

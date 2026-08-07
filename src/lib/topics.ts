@@ -1,102 +1,96 @@
 const TOPICS = {
-	tech: [
+	technology: [
 		'Künstliche Intelligenz erklärt: Was steckt hinter ChatGPT?',
-		'Warum ist mein Smartphone jedes Jahr schneller?',
-		'Die Zukunft des Internets: Web 3.0 und Blockchain',
-		'Smart Home - Dein Haus denkt für dich',
+		'Quantencomputer: Die Zukunft der Rechenleistung',
 		'Cyber-Sicherheit: So schützt du dich online',
-		'5G - Mehr als nur schnelleres Internet',
-		'Cloud Computing: Wo sind meine Daten wirklich?',
-		'Das Metaverse - Zukunft oder Luftschloss?',
-		'E-Auto vs. Verbrenner: Was ist besser für die Umwelt?',
-		'Wie funktioniert Gesichtserkennung?',
+		'Robotik im Alltag: Vom Roboterarm zum Androiden',
+		'Space Tech: Mars-Missionen und Weltraumtourismus',
+		'5G und 6G: Mehr als nur schnelleres Internet',
+		'Blockchain jenseits von Krypto: Smart Contracts & DAOs',
+		'Edge Computing: Rechenleistung am Rand des Netzes',
+		'Digital Twins: Virtuelle Abbilder der Realität',
+		'Neuromorphe Chips: Hardware, die wie das Gehirn denkt',
 	],
-	wissen: [
-		'Warum schlafen wir? Die Wissenschaft des Schlafs',
-		'Wie entstehen Träume?',
-		'Schwarze Löcher: Was wissen wir wirklich?',
-		'Der Klimawandel in 5 Minuten erklärt',
-		'Warum ist der Himmel blau?',
-		'DNA: Der Bauplan des Lebens',
-		'Wie heilt eine Wunde?',
-		'Der Ozean: Das letzte unbekannte Gebiet der Erde',
-		'Quantenphysik für Anfänger',
-		'Warum haben wir Jahrzehnte?',
+	science: [
+		'Klimawandel: Kipppunkte und Lösungsansätze',
+		'CRISPR & Gentechnik: Die Schere im Erbgut',
+		'Dunkle Materie: Was hält das Universum zusammen?',
+		'mRNA-Impfstoffe: Revolution der Medizin',
+		'Neurowissenschaften: Wie das Gehirn Bewusstsein erschafft',
+		'Kernfusion: Die Energie der Sterne auf der Erde',
+		'Mikrobiom: Die Bakterien, die wir sind',
+		'Quantenverschränkung: Spukhafte Fernwirkung',
+		'Astrobiologie: Suche nach außerirdischem Leben',
+		'Materialwissenschaft: Graphen & Metamaterialien',
 	],
-	gesellschaft: [
-		'Generation Z: Die digitale Eingeborene',
-		'Social Media - Sucht oder Kommunikation?',
-		'Warum ist Urlaub wichtig für unsere Gesundheit?',
-		'Die Wissenschaft des Lächelns',
-		'Warum procrastinieren wir?',
-		'Stadt vs. Land: Wo lebt es sich besser?',
-		'Die Psyche unter Stress: Was passiert im Gehirn?',
-		'Warum lieben wir Horrorfilme?',
-		'Der Einfluss von Musik auf unsere Stimmung',
-		'Warum ist Lesen gut fürs Gehirn?',
+	culture: [
+		'Digital Art & NFTs: Kunst im Blockchain-Zeitalter',
+		'Gaming-Kultur: Vom Nischenhobby zum Mainstream',
+		'Streaming-Wars: Wie sich unser Medienkonsum ändert',
+		'Social Media Algorithmen: Was sie über dich wissen',
+		'Meme Culture: Die Sprache des Internets',
+		'Virtual Influencer: Wenn Avatare berühmter sind als Menschen',
+		'Creator Economy: Vom Hobby zum Beruf',
+		'Retro Gaming: Warum Pixel nie aus der Mode kommen',
+		'Internet-Ästhetiken: Vaporwave, Cottagecore & Co.',
+		'Digital Fashion: Kleidung, die nicht existiert',
 	],
-	ratgeber: [
-		'Gesünder schlafen: 10 Tipps für besseren Schlaf',
-		'Wie bleibe ich motiviert?',
-		'Effektives Lernen: Die Pomodoro-Technik',
-		'Gesunde Ernährung für Anfänger',
-		'Wie reduziere ich Stress im Alltag?',
-		'Mehr Produktivität in weniger Zeit',
-		'Gesund bleiben im Homeoffice',
-		'Wie funktioniert unser Gedächtnis?',
-		'Besser konzentrieren: Fokus fürs digitale Zeitalter',
-		'Work-Life-Balance: Tipps für Berufstätige',
+	society: [
+		'Future of Work: Remote, KI & 4-Tage-Woche',
+		'Bildung 2030: Lernen mit KI-Tutoren',
+		'Datenschutz vs. Überwachung: Der gläserne Mensch',
+		'KI-Ethik: Wer haftet für algorithmische Entscheidungen?',
+		'Urban Planning: Schwammstädte & 15-Minuten-Städte',
+		'Grundeinkommen: Utopie oder Notwendigkeit?',
+		'Demografie: Alternende Gesellschaften & Migration',
+		'Gig Economy: Freiheit oder Prekarität?',
+		'Desinformation: Wie Fake News die Demokratie bedrohen',
+		'Mental Health im digitalen Zeitalter',
 	],
-	witziges: [
-		'Warum gähnen wir ansteckend?',
+	fun: [
+		'Weird Science: Ig-Nobel-Preise & kurioseste Studien',
+		'Internet Mysteries: Cicada 3301 & ungeklärte Phänomene',
+		'Retro Tech: Disketten, Modems & der Sound der 90er',
+		'Verschwörungstheorien: Warum wir an sie glauben',
 		'Die seltsamsten Gesetze aus aller Welt',
-		'Warum vergessen wir Träume so schnell?',
-		'Haustiere verstehen uns besser als wir denken',
-		'Die Wissenschaft hinter Déjà vu',
-		'Warum macht Kaffee uns wach?',
-		'Ungewöhnliche Fakten, die niemand braucht',
-		'Warum haben Katzen neun Leben?',
-		'Die lustigsten Übersetzungsfehler der Geschichte',
-		'Warum knacken unsere Finger?',
-	],
-	trending: [
-		'Bitcoin und Kryptowährungen für Einsteiger',
-		'NFTs: Digitales Eigentum erklärt',
-		'Influencer Marketing: Wie funktioniert das?',
-		'Nachhaltigkeit: Was kann jeder tun?',
-		'Remote-Arbeit: Die Zukunft der Büros?',
-		'Elektromobilität: Der Weg zur Klimaneutralität?',
-		'Datenschutz im digitalen Zeitalter',
-		'Kreativität und künstliche Intelligenz',
-		'Die Streaming-Revolution: Fernsehen neu gedacht',
-		'Fitness-Tracker: Wie gesund sind wir wirklich?',
+		'Lost Media: Verschwundene Filme, Spiele & Websites',
+		'Number Stations: Geheime Radiosignale im Äther',
+		'Glitches in the Matrix: Simulationstheorie',
+		'Kryptide: Bigfoot, Nessie & die Suche nach Beweisen',
+		'Die absurdesten Patente der Geschichte',
 	],
 }
 
 const CATEGORY_NAMES: Record<keyof typeof TOPICS, string> = {
-	tech: '💻 Technologie',
-	wissen: '🔬 Wissenschaft',
-	gesellschaft: '👥 Gesellschaft',
-	ratgeber: '💡 Ratgeber',
-	witziges: '😄 Interessantes',
-	trending: '📈 Trendthemen',
+	technology: '💻 Technologie',
+	science: '🔬 Wissenschaft',
+	culture: '🎨 Kultur',
+	society: '👥 Gesellschaft',
+	fun: '🎲 Fun & Kurioses',
 }
+
+const TOPIC_CATEGORIES = TOPICS
 
 const ALL_TOPICS = Object.values(TOPICS).flat()
 
-export function getRandomTopic(): string {
+export function getRandomTopic(category?: keyof typeof TOPICS): string {
+	if (category && TOPICS[category]) {
+		const topics = TOPICS[category]
+		return topics[Math.floor(Math.random() * topics.length)]
+	}
 	return ALL_TOPICS[Math.floor(Math.random() * ALL_TOPICS.length)]
 }
 
-export function getRandomTopicByCategory(
-	category: keyof typeof TOPICS,
-): string {
-	const topics = TOPICS[category]
-	return topics[Math.floor(Math.random() * topics.length)]
+export function getTopicsByCategory(category: keyof typeof TOPICS): string[] {
+	return TOPICS[category] || []
+}
+
+export function getAllCategories(): (keyof typeof TOPICS)[] {
+	return Object.keys(TOPICS) as (keyof typeof TOPICS)[]
 }
 
 export function getRandomCategory(): keyof typeof TOPICS {
-	const categories = Object.keys(TOPICS) as (keyof typeof TOPICS)[]
+	const categories = getAllCategories()
 	return categories[Math.floor(Math.random() * categories.length)]
 }
 
@@ -107,4 +101,5 @@ export function getCategories(): {id: keyof typeof TOPICS; name: string}[] {
 	}))
 }
 
-export {TOPICS, CATEGORY_NAMES}
+export {TOPICS, TOPIC_CATEGORIES, CATEGORY_NAMES}
+export type TopicCategory = keyof typeof TOPICS

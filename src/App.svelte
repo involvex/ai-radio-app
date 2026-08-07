@@ -6,7 +6,7 @@ import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } fr
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
 import { createShowZip, downloadZip } from "./lib/zip-export";
-import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
+import { getRandomTopic, getCategories, getRandomTopicByCategory, getTopicsByCategory, getAllCategories, type TopicCategory } from "./lib/topics";
 import { fetchLinkContent } from "./lib/scraper";
 import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
 import { generateCoverCanvas, canvasToDataURL, type CoverOptions } from "./lib/cover-generator";
@@ -44,24 +44,21 @@ import { segmentsToTranscript } from "./lib/transcript-player";
   let transcriptLines = $state<import("./lib/transcript-player").TranscriptLine[]>([]);
   let coverDataUrl = $state<string | null>(null);
   let currentEpisode = $state<Episode | null>(null);
+  let isTransitioning = $state(false);
 
-let apiKeyInput: string;
-let selectedProvider: AppSettings['apiProvider'];
-let selectedVoice: string;
-let selectedQuality: AppSettings['quality'];
-let selectedStyle: AppSettings['style'];
-let fileInput: HTMLInputElement | null = $state(null);
+  let selectedCategory = $state<TopicCategory | 'all'>('all');
+  let categories = $derived(getCategories());
+  let allCategoryIds = $derived(getAllCategories());
+  let filteredTopics = $derived(selectedCategory === 'all'
+    ? allCategoryIds.flatMap((c: TopicCategory) => getTopicsByCategory(c))
+    : getTopicsByCategory(selectedCategory));
 
-let _settingsSync = $derived.by(() => {
-  apiKeyInput = settings.apiKey;
-  selectedProvider = settings.apiProvider;
-  selectedVoice = settings.defaultVoice;
-  selectedQuality = settings.quality;
-  selectedStyle = settings.style;
-  return settings;
-});
-
-  const categories = getCategories();
+  let apiKeyInput = $state<string>("");
+  let selectedProvider = $state<AppSettings['apiProvider']>('none');
+  let selectedVoice = $state<string>("");
+  let selectedQuality = $state<AppSettings['quality']>('normal');
+  let selectedStyle = $state<AppSettings['style']>('tech');
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   const isAndroid = /android/i.test(navigator.userAgent);
 
@@ -303,27 +300,34 @@ async function handleReroll() {
 }
 
 async function handleSimilar() {
-  if (settings.apiProvider === 'none' || !settings.apiKey) {
-    topic = getRandomTopic();
-    await tuneIn();
-    return;
-  }
-  syncMessage = "Suche ähnliche Themen...";
+  isTransitioning = true;
   try {
-    const { suggestRelatedTopic } = await import("./lib/settings");
-    const related = await suggestRelatedTopic(topic, settings);
-    if (related) {
-      topic = related;
-      await tuneIn();
-    } else {
+    if (settings.apiProvider === 'none' || !settings.apiKey) {
       topic = getRandomTopic();
-      await tuneIn();
+      await tuneIn('similar', topic);
+      return;
     }
-  } catch {
-    topic = getRandomTopic();
-    await tuneIn();
+    syncMessage = "Suche ähnliches Thema...";
+    try {
+      const { suggestRelatedTopic } = await import("./lib/settings");
+      const related = await suggestRelatedTopic(topic, settings);
+      if (related) {
+        topic = related;
+        await tuneIn('similar', topic);
+      } else {
+        topic = getRandomTopic();
+        await tuneIn('similar', topic);
+      }
+    } catch {
+      topic = getRandomTopic();
+      await tuneIn('similar', topic);
+    } finally {
+      syncMessage = "";
+    }
   } finally {
-    syncMessage = "";
+    // Brief delay for transition animation
+    await new Promise(r => setTimeout(r, 150));
+    isTransitioning = false;
   }
 }
 
@@ -432,6 +436,21 @@ async function handleSimilar() {
     showTopicSuggestions = false;
   }
 
+  function getRandomTopicForCategory() {
+    if (selectedCategory === 'all') {
+      topic = getRandomTopic();
+    } else {
+      topic = getRandomTopicByCategory(selectedCategory);
+    }
+    showTopicSuggestions = false;
+  }
+
+  async function handleSimilarTopic(suggestedTopic: string) {
+    topic = suggestedTopic;
+    showTopicSuggestions = false;
+    await handleSimilar();
+  }
+
   async function handleExport() {
     try {
       isSyncing = true;
@@ -493,7 +512,7 @@ async function handleSimilar() {
 
 <div class="scanlines"></div>
 
-<main class="terminal">
+<main class="terminal" class:transitioning={isTransitioning}>
   <header class="header">
     <h1>📡 AI_RADIO_v1.0.0</h1>
     <div class="header-actions">
@@ -537,14 +556,39 @@ async function handleSimilar() {
       {#if showTopicSuggestions}
         <div class="topic-suggestions">
           <div class="suggestions-header">
-            <span>Wähle eine Kategorie:</span>
-            <button class="btn-random" onclick={getRandomTopicHandler}>🎲 Zufälliges Thema</button>
+            <span>Kategorie:</span>
+            <div class="category-tabs">
+              <button
+                class="category-tab"
+                class:active={selectedCategory === 'all'}
+                onclick={() => selectedCategory = 'all'}
+              >
+                Alle
+              </button>
+              {#each categories as cat}
+                <button
+                  class="category-tab"
+                  class:active={selectedCategory === cat.id}
+                  onclick={() => selectedCategory = cat.id}
+                >
+                  {cat.name.split(' ')[0]}
+                </button>
+              {/each}
+            </div>
           </div>
-          {#each categories as cat}
-            <button class="category-btn" onclick={() => getRandomTopicFromCategory(cat.id)}>
-              {cat.name}
-            </button>
-          {/each}
+          <div class="topic-list">
+            {#each filteredTopics as t}
+              <div class="topic-item">
+                <button class="topic-btn" onclick={() => { topic = t; showTopicSuggestions = false; }}>
+                  {t}
+                </button>
+                <button class="btn-similar" onclick={() => handleSimilarTopic(t)} title="Ähnliches Thema finden">🔄</button>
+              </div>
+            {/each}
+          </div>
+          <div class="suggestions-footer">
+            <button class="btn-random" onclick={getRandomTopicForCategory}>🎲 Würfel</button>
+          </div>
         </div>
       {/if}
     </div>
@@ -1634,5 +1678,119 @@ async function handleSimilar() {
     border-color: #00ff41;
     box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
     outline: none;
+  }
+
+  .category-tabs {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+
+  .category-tab {
+    background: #0a0a0a;
+    border: 1px solid #003311;
+    color: #00aa2a;
+    padding: 0.375rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .category-tab:hover {
+    border-color: #00ff41;
+    color: #00ff41;
+    background: #001100;
+  }
+
+  .category-tab.active {
+    background: #00ff41;
+    color: #0a0a0a;
+    border-color: #00ff41;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.4);
+  }
+
+  .topic-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 0.75rem 0;
+  }
+
+  .topic-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: #0a0a0a;
+    border: 1px solid #001100;
+    margin-bottom: 0.375rem;
+    transition: all 0.2s ease;
+  }
+
+  .topic-item:hover {
+    border-color: #003311;
+    background: #111111;
+  }
+
+  .topic-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #00ff41;
+    padding: 0;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.2s ease;
+  }
+
+  .topic-btn:hover {
+    color: #00cc33;
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+  }
+
+  .btn-similar {
+    background: #003311;
+    border: 1px solid #003311;
+    color: #00aa2a;
+    padding: 0.25rem 0.5rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .btn-similar:hover {
+    background: #00ff41;
+    color: #0a0a0a;
+    border-color: #00ff41;
+    transform: rotate(180deg);
+  }
+
+  .suggestions-footer {
+    display: flex;
+    justify-content: center;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #003311;
+  }
+
+  .suggestions-footer .btn-random {
+    padding: 0.5rem 1.5rem;
+    font-size: 0.875rem;
+  }
+
+  .terminal.transitioning .player-section,
+  .terminal.transitioning .post-actions {
+    opacity: 0.5;
+    transform: scale(0.98);
+    transition: all 0.15s ease;
   }
 </style>

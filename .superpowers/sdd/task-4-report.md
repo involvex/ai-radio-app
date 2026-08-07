@@ -1,39 +1,51 @@
-# Task 4: Frontend Local LLM API - Report
+# Task 4 Report: Canvas Cover Art Generator
 
-## What I Implemented
+## Status: DONE
 
-### 1. `src/lib/local-llm.ts` (new file)
+## Commit Hash: e5fca7c
 
-- TypeScript API wrapper for all Tauri `invoke()` commands from Tasks 2-3
-- **Functions:** `startLocalLLM`, `stopLocalLLM`, `generateScriptLocal`, `listLocalModels`, `downloadModel`, `deleteModel`, `pickModelFile`
-- **Event listeners:** `onDownloadProgress`, `onLocalLLMReady`, `onLocalLLMError`
-- **Constants:** `AVAILABLE_MODELS` with 3 pre-configured HuggingFace GGUF models (Gemma 3 1B, Qwen3 1.7B, Llama 3.2 3B)
-- All interfaces (`LocalModel`, `DownloadProgress`) match the Rust backend structs
+## Test Results
 
-### 2. `src/lib/settings.ts` (modified)
+- `bun run lint`: PASS
+- `bun run typecheck`: PASS
+- `bun run build`: PASS (1.84s, 272.37 kB JS bundle)
 
-- Added `'local'` to the `apiProvider` union type: `'kilo' | 'opencode' | 'gemini' | 'local' | 'none'`
-- Added optional `localModelPath?: string` field to `AppSettings`
-- Updated `invokeGenerateScript` to handle the `'local'` provider — routes to `generate_script_local` command directly (no API key needed)
-- Updated `suggestRelatedTopic` to skip when provider is `'local'` (local LLM doesn't support suggestion)
+## Summary
 
-## What I Tested
+Successfully implemented the Canvas Cover Art Generator for AI Radio (Task 4 of 10).
 
-- `bun run typecheck` — passed with zero errors
-- Verified all backend command signatures in `local_llm.rs` and `model_manager.rs` match the frontend invoke calls
+### Files Created
 
-## Files Changed
+1. **src/lib/cover-generator.ts** (486 lines)
+   - `CoverOptions` interface with title, topic, style, width=512, height=512, seed
+   - `STYLE_THEMES` object mapping 7 styles (tech, casual, academic, entertaining, news, podcast, chill) to colors/patterns
+   - `generateCoverCanvas(options: CoverOptions): HTMLCanvasElement` - main generator
+   - `canvasToDataURL(canvas, type='image/png'): string` - data URL conversion
+   - `downloadCover(canvas, filename)` - triggers browser download
+   - 7 pattern functions: `drawCircuitPattern`, `drawWavePattern`, `drawGridPattern`, `drawStarPattern`, `drawLinePattern`, `drawSoundwavePattern`, `drawCloudPattern`
+   - Helper functions: `drawScanlines`, `drawTitle`, `drawTopic`, `drawRadioIcon`, `wrapText`, `hashString`, `seededRandom`
 
-| File                   | Action               |
-| ---------------------- | -------------------- |
-| `src/lib/local-llm.ts` | Created              |
-| `src/lib/settings.ts`  | Modified (3 changes) |
+2. **src/components/CoverArt.svelte** (85 lines)
+   - Props: `title`, `topic`, `style`, `size=300`, `onGenerated?(dataUrl)`
+   - On mount: generates cover, calls onGenerated callback
+   - Click handler to download cover as PNG
+   - Renders img with dataUrl or placeholder states (generating/error)
+   - Hover overlay with "⬇ DOWNLOAD" hint
+   - Terminal aesthetic: border glow on hover, aspect-ratio 1:1
 
-## Self-Review Findings
+### Files Modified
 
-- The `generateScriptLocal` function in `local-llm.ts` is a standalone export that can be called directly, while `invokeGenerateScript` in `settings.ts` also routes to it for the `'local'` provider — this gives flexibility for both direct and settings-based usage
-- No issues found
+3. **src/App.svelte**
+   - Added imports: `CoverArt`, `generateCoverCanvas`, `canvasToDataURL`, `CoverOptions`
+   - Added `coverDataUrl` state
+   - In `tuneIn()`: generate cover after audio mixing, set `coverDataUrl`, include in episode
+   - In `playEpisode()`: restore `coverDataUrl` from episode
+   - In player section: added `<CoverArt />` in `.player-header` layout with `.player-main` (flex: 1)
+   - Added CSS for `.player-header` (flex, gap) and `.player-main` (flex: 1)
 
-## Issues or Concerns
+4. **src/lib/db.ts**
+   - Added optional `coverDataUrl?: string` to `Episode` interface
 
-None. The implementation matches the brief exactly.
+## Concerns
+
+None. All lint, typecheck, and build pass. The implementation follows the terminal/hacker aesthetic, works offline, uses Canvas API, and is Tauri v2 compatible. Pre-existing accessibility warnings in the codebase are unrelated to this task.

@@ -1,84 +1,70 @@
-## Task 5: Model Manager UI Component
+# Task 5: ZIP Export (Audio + Cover + Show Notes)
 
-**Files:**
+## Files to Create/Modify
 
-- Create: `src/components/ModelManager.svelte`
-- Modify: `src/App.svelte` (integrate ModelManager, add 'local' provider option)
+**Create:**
 
-**Interfaces:**
+- `src/lib/zip-export.ts`
 
-- Consumes: `local-llm.ts` API (Task 4)
-- Produces: ModelManager Svelte component with download, select, delete, file picker
+**Modify:**
 
-- [ ] **Step 1: Create `src/components/` directory**
+- `src/App.svelte` (add export button and handler)
 
-```bash
-mkdir -p src/components
-```
+## Interfaces
 
-- [ ] **Step 2: Create ModelManager.svelte**
+**Consumes:** `episode: Episode & { coverDataUrl?: string; speakerSegments?: SpeakerSegment[] }`, `coverDataUrl?: string`
+**Produces:** `Blob` (ZIP file)
 
-Create a Svelte 5 component using runes syntax (`$state`, `$derived`, `$effect`) that provides:
+## Steps
 
-- List of available models to download (from `AVAILABLE_MODELS`)
-- Download button for each model with progress indicator
-- List of installed models (from `listLocalModels()`)
-- Radio button selection for active model
-- Delete button for each installed model
-- "PICK .GGUF FILE" button (file picker)
-- START/STOP buttons for the local LLM
-- Status indicator (NOT RUNNING / STARTING... / READY / ERROR)
+### Step 1: Create ZIP export library
 
-Style with the terminal/hacker aesthetic: dark background (#0a0a0a), green text (#00ff41), monospace font, scanline feel.
+Create `src/lib/zip-export.ts` with:
 
-Use the imports from `$lib/local-llm`:
+- `ShowNotes` interface (show_title, show_duration, two_sentence_summary, date_of_generation, timecoded_transcript)
+- `createShowZip(episode, coverDataUrl?): Promise<Blob>` - main function
+- Uses JSZip (dynamic import) to create ZIP
+- Adds: audio file (ai_radio.mp3), cover image (cover.png), show_notes.json
+- `fetchBlob(url): Promise<Blob>` - handles data:, blob:, and http URLs
+- `generateShowNotes(episode): ShowNotes` - creates show notes from episode
+- `formatSpeakerName(speaker): string` - formats speaker for JSON
+- `formatTimecode(seconds): string` - formats as MM:SS
+- `downloadZip(blob, filename)` - triggers browser download
 
-```typescript
-import {
-	listLocalModels,
-	downloadModel,
-	deleteModel,
-	pickModelFile,
-	startLocalLLM,
-	stopLocalLLM,
-	onDownloadProgress,
-	onLocalLLMReady,
-	AVAILABLE_MODELS,
-	type LocalModel,
-	type DownloadProgress,
-} from '$lib/local-llm'
-```
+### Step 2: Add export button to App.svelte
 
-- [ ] **Step 3: Integrate ModelManager into App.svelte**
+Modify `src/App.svelte`:
 
-Read the current `src/App.svelte` first to understand the settings panel structure.
+- Import `createShowZip`, `downloadZip` from `./lib/zip-export`
+- Add `handleDownloadZip(episode)` async function:
+  - Shows syncMessage "Erstelle ZIP-Archiv..."
+  - Calls createShowZip(episode, coverDataUrl)
+  - Generates filename from episode title
+  - Calls downloadZip
+  - Shows success/error message
+- In player section, add export button next to play/download buttons
+- Button: "📦 ZIP Export" with click handler
 
-Add import at the top:
-
-```typescript
-import ModelManager from './components/ModelManager.svelte'
-```
-
-In the settings panel section, add the ModelManager component when the local provider is selected. Look for the API provider selection area and add a conditional render:
-
-```svelte
-{#if settings.apiProvider === 'local'}
-  <ModelManager />
-{/if}
-```
-
-Also add a "LOCAL" option to the provider selection UI. The current settings panel has provider buttons/selection - add one for 'local'.
-
-- [ ] **Step 4: Test that the component renders**
-
-Run `bun run dev` and verify:
-
-- The ModelManager component appears in settings when LOCAL is selected
-- The terminal-style UI is consistent with the rest of the app
-
-- [ ] **Step 5: Commit**
+### Step 3: Add JSZip dependency
 
 ```bash
-git add src/components/ModelManager.svelte src/App.svelte
-git commit -m "feat: add ModelManager UI component for local AI model management"
+cd D:\repos\ai-radio\ai-radio && bun add jszip
 ```
+
+### Step 4: Run tests
+
+```bash
+cd D:\repos\ai-radio\ai-radio && bun run lint && bun run typecheck
+```
+
+Expected: PASS
+
+## Global Constraints
+
+- No cloud dependencies — all features work offline
+- Use JSZip for ZIP creation
+- Bundle size < 50MB
+- Tauri v2 compatible
+- Svelte 5 runes only
+- Bun >= 1.3.0
+- Preserve terminal/hacker aesthetic
