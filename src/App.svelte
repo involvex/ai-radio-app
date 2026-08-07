@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage, type SpeakerSegment } from "./lib/edge-tts-client";
+import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, type SpeakerSegment } from "./lib/edge-tts-client";
+import { STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage } from "./lib/generation-stages";
 import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
@@ -10,6 +11,8 @@ import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
 import ModelManager from "./components/ModelManager.svelte";
 import GenerationProgress from "./components/GenerationProgress.svelte";
 import AudioVisualizer from "./components/AudioVisualizer.svelte";
+import TranscriptPlayer from "./components/TranscriptPlayer.svelte";
+import { segmentsToTranscript } from "./lib/transcript-player";
 
   let topic = $state("");
   let link = $state("");
@@ -35,6 +38,7 @@ import AudioVisualizer from "./components/AudioVisualizer.svelte";
   let generationLogs: {timestamp: string; stage: GenerationStage; message: string}[] = $state([]);
   let parsedScript: ReturnType<typeof parseScriptToSegments> | null = $state(null);
   let speakerSegments: SpeakerSegment[] = $state([]);
+  let transcriptLines = $state<import("./lib/transcript-player").TranscriptLine[]>([]);
 
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
@@ -170,6 +174,7 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
     const parsed = parseScriptToSegments(script, settings.style)
     parsedScript = parsed
     speakerSegments = parsed.segments
+    transcriptLines = segmentsToTranscript(parsed.segments)
     addLog('generating-speech', `Parsed ${parsed.segments.length} speaker segments`)
     await sleep(200)
 
@@ -254,6 +259,7 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       duration: audioElement?.duration || 0,
       createdAt: new Date(),
       isFavorite: false,
+      speakerSegments: parsed.segments,
     }
 
     await saveEpisode(episode)
@@ -337,6 +343,7 @@ async function handleSimilar() {
 
   async function playEpisode(episode: Episode) {
     currentScript = episode.script;
+    transcriptLines = segmentsToTranscript(episode.speakerSegments || [])
     if (audioElement && episode.audioUrl) {
       audioElement.src = episode.audioUrl;
       await audioElement.play();
@@ -567,6 +574,17 @@ async function handleSimilar() {
           <span class="time">{formatTime(duration)}</span>
         </div>
       </div>
+
+      {#if transcriptLines.length > 0}
+        <TranscriptPlayer
+          transcript={transcriptLines}
+          currentTime={currentTime}
+          duration={duration}
+          audioElement={audioElement}
+          episodeId={episodeHistory.find(e => e.script === currentScript)?.id || ''}
+          episodeTitle={episodeHistory.find(e => e.script === currentScript)?.title || 'Current Episode'}
+        />
+      {/if}
 
       <div class="script-preview">
         <p>{currentScript.slice(0, 300)}{currentScript.length > 300 ? "..." : ""}</p>
