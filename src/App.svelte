@@ -8,10 +8,12 @@ import { exportData, downloadSyncFile, importData } from "./lib/sync";
 import { getRandomTopic, getCategories, getRandomTopicByCategory, type TOPICS } from "./lib/topics";
 import { fetchLinkContent } from "./lib/scraper";
 import { onLocalLLMReady, onLocalLLMError } from "./lib/local-llm";
+import { generateCoverCanvas, canvasToDataURL, type CoverOptions } from "./lib/cover-generator";
 import ModelManager from "./components/ModelManager.svelte";
 import GenerationProgress from "./components/GenerationProgress.svelte";
 import AudioVisualizer from "./components/AudioVisualizer.svelte";
 import TranscriptPlayer from "./components/TranscriptPlayer.svelte";
+import CoverArt from "./components/CoverArt.svelte";
 import { segmentsToTranscript } from "./lib/transcript-player";
 
   let topic = $state("");
@@ -39,6 +41,7 @@ import { segmentsToTranscript } from "./lib/transcript-player";
   let parsedScript: ReturnType<typeof parseScriptToSegments> | null = $state(null);
   let speakerSegments: SpeakerSegment[] = $state([]);
   let transcriptLines = $state<import("./lib/transcript-player").TranscriptLine[]>([]);
+  let coverDataUrl = $state<string | null>(null);
 
 let apiKeyInput: string;
 let selectedProvider: AppSettings['apiProvider'];
@@ -238,8 +241,16 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
     addLog('generating-metadata', 'Creating episode entry...')
     await sleep(200)
 
-    updateStage('generating-cover', 'Generating cover art (placeholder)...')
-    addLog('generating-cover', 'Cover generation skipped (Task 3)')
+    updateStage('generating-cover', 'Generating cover art...')
+    addLog('generating-cover', 'Generating cover art...')
+    const coverCanvas = generateCoverCanvas({
+      title: parsed.title || activeTopic.slice(0, 50),
+      topic: activeTopic,
+      style: settings.style,
+      width: 512,
+      height: 512,
+    });
+    coverDataUrl = canvasToDataURL(coverCanvas);
     await sleep(200)
 
     if (audioElement) {
@@ -260,6 +271,7 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       createdAt: new Date(),
       isFavorite: false,
       speakerSegments: parsed.segments,
+      coverDataUrl: coverDataUrl || undefined,
     }
 
     await saveEpisode(episode)
@@ -344,6 +356,7 @@ async function handleSimilar() {
   async function playEpisode(episode: Episode) {
     currentScript = episode.script;
     transcriptLines = segmentsToTranscript(episode.speakerSegments || [])
+    coverDataUrl = episode.coverDataUrl || null;
     if (audioElement && episode.audioUrl) {
       audioElement.src = episode.audioUrl;
       await audioElement.play();
@@ -561,17 +574,27 @@ async function handleSimilar() {
 
     {#if audioElement && currentScript}
       <div class="player-section">
-        <AudioVisualizer {audioElement} {isPlaying} barCount={40} style="bars" />
+        <div class="player-header">
+          <CoverArt
+            title={parsedScript?.title || topic.slice(0, 50)}
+            topic={topic}
+            style={settings.style}
+            size={200}
+          />
+          <div class="player-main">
+            <AudioVisualizer {audioElement} {isPlaying} barCount={40} style="bars" />
 
-        <div class="progress-container">
-          <span class="time">{formatTime(currentTime)}</span>
-          <div class="progress-bar">
-            <div
-              class="progress-fill"
-              style="width: {duration ? (currentTime / duration) * 100 : 0}%"
-            ></div>
+            <div class="progress-container">
+              <span class="time">{formatTime(currentTime)}</span>
+              <div class="progress-bar">
+                <div
+                  class="progress-fill"
+                  style="width: {duration ? (currentTime / duration) * 100 : 0}%"
+                ></div>
+              </div>
+              <span class="time">{formatTime(duration)}</span>
+            </div>
           </div>
-          <span class="time">{formatTime(duration)}</span>
         </div>
       </div>
 
@@ -991,6 +1014,17 @@ async function handleSimilar() {
     padding: 1.5rem;
     background: #111111;
     border: 1px solid #003311;
+  }
+
+  .player-header {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+  }
+
+  .player-main {
+    flex: 1;
+    min-width: 0;
   }
 
   .progress-container {

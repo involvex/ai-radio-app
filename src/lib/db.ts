@@ -14,6 +14,7 @@ export interface Episode {
 	createdAt: Date
 	isFavorite: boolean
 	speakerSegments?: SpeakerSegment[]
+	coverDataUrl?: string
 }
 
 export interface Bookmark {
