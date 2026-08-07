@@ -2,7 +2,7 @@
 import { onMount } from "svelte";
 import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, type SpeakerSegment } from "./lib/edge-tts-client";
 import { STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage } from "./lib/generation-stages";
-import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings } from "./lib/settings";
+import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings, exportSettings, importSettings, resetSettings, SETTINGS_VERSION } from "./lib/settings";
 import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
 import { createShowZip, downloadZip } from "./lib/zip-export";
@@ -68,6 +68,7 @@ import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, form
   let selectedQuality = $state<AppSettings['quality']>('normal');
   let selectedStyle = $state<AppSettings['style']>('tech');
   let fileInput = $state<HTMLInputElement | null>(null);
+  let settingsFileInput = $state<HTMLInputElement | null>(null);
 
   const isAndroid = /android/i.test(navigator.userAgent);
 
@@ -448,6 +449,68 @@ async function handleSimilar() {
     };
     saveSettings(settings);
     showSettings = false;
+  }
+
+  function handleExportSettings() {
+    const json = exportSettings();
+    const blob = new Blob([json], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ai-radio-settings-v${SETTINGS_VERSION}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    syncMessage = 'Einstellungen exportiert!';
+  }
+
+  function triggerSettingsImport() {
+    if (settingsFileInput) {
+      settingsFileInput.click();
+    }
+  }
+
+  async function handleSettingsFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    try {
+      isSyncing = true;
+      syncMessage = 'Importiere Einstellungen...';
+      const text = await file.text();
+      const success = importSettings(text);
+      if (success) {
+        settings = loadSettings();
+        apiKeyInput = settings.apiKey;
+        selectedProvider = settings.apiProvider;
+        selectedVoice = settings.defaultVoice;
+        selectedQuality = settings.quality;
+        selectedStyle = settings.style;
+        syncMessage = 'Einstellungen erfolgreich importiert!';
+      } else {
+        syncMessage = 'Import fehlgeschlagen: Ungültiges Format';
+      }
+    } catch (e: any) {
+      syncMessage = `Import fehlgeschlagen: ${e.message}`;
+    } finally {
+      isSyncing = false;
+      if (settingsFileInput) settingsFileInput.value = '';
+    }
+  }
+
+  function handleResetSettings() {
+    if (confirm('Alle Einstellungen auf Standardwerte zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
+      resetSettings();
+      settings = loadSettings();
+      apiKeyInput = settings.apiKey;
+      selectedProvider = settings.apiProvider;
+      selectedVoice = settings.defaultVoice;
+      selectedQuality = settings.quality;
+      selectedStyle = settings.style;
+      syncMessage = 'Einstellungen zurückgesetzt!';
+    }
   }
 
   function clearApiKey() {
@@ -906,6 +969,37 @@ async function handleSimilar() {
               </button>
               <button class="btn-secondary" onclick={triggerImport} disabled={isSyncing}>
                 [ 📥 IMPORT ]
+              </button>
+            </div>
+
+            {#if syncMessage}
+              <p class="sync-message" class:error={syncMessage.includes("fehl") || syncMessage.includes("Fehler")}>
+                {syncMessage}
+              </p>
+            {/if}
+          </div>
+
+          <div class="settings-section">
+            <h3>Einstellungen Backup</h3>
+            <p class="hint">Exportiere/Importiere nur die App-Einstellungen (ohne Episoden). Version: v{SETTINGS_VERSION}</p>
+
+            <input
+              type="file"
+              accept=".json"
+              bind:this={settingsFileInput}
+              onchange={handleSettingsFileSelect}
+              style="display: none;"
+            />
+
+            <div class="sync-buttons">
+              <button class="btn-secondary" onclick={handleExportSettings} disabled={isSyncing}>
+                [ 📤 EXPORT SETTINGS ]
+              </button>
+              <button class="btn-secondary" onclick={triggerSettingsImport} disabled={isSyncing}>
+                [ 📥 IMPORT SETTINGS ]
+              </button>
+              <button class="btn-secondary" onclick={handleResetSettings} disabled={isSyncing} style="background: #330000; border-color: #ff3333; color: #ff3333;">
+                [ 🔄 RESET TO DEFAULTS ]
               </button>
             </div>
 

@@ -1,5 +1,7 @@
 import {invoke} from '@tauri-apps/api/core'
 
+export const SETTINGS_VERSION = 2
+
 export interface AppSettings {
 	apiKey: string
 	apiProvider: 'kilo' | 'opencode' | 'gemini' | 'local' | 'none'
@@ -10,6 +12,9 @@ export interface AppSettings {
 	playbackSpeed: number
 	quality: 'short' | 'normal' | 'long' | 'chill'
 	style: 'tech' | 'casual' | 'academic' | 'entertaining' | 'news' | 'podcast'
+	visualizerStyle: 'bars' | 'wave' | 'dots'
+	quotaEnabled: boolean
+	autoSaveCovers: boolean
 }
 
 export async function invokeGenerateScript(
@@ -63,14 +68,47 @@ const DEFAULT_SETTINGS: AppSettings = {
 	playbackSpeed: 1,
 	quality: 'normal',
 	style: 'tech',
+	visualizerStyle: 'bars',
+	quotaEnabled: true,
+	autoSaveCovers: true,
+}
+
+export function migrateSettings(
+	oldSettings: Partial<AppSettings>,
+	oldVersion: number,
+): AppSettings {
+	const migrated = {...DEFAULT_SETTINGS, ...oldSettings} as AppSettings
+
+	if (oldVersion < 2) {
+		migrated.visualizerStyle =
+			oldSettings.visualizerStyle ?? DEFAULT_SETTINGS.visualizerStyle
+		migrated.quotaEnabled =
+			oldSettings.quotaEnabled ?? DEFAULT_SETTINGS.quotaEnabled
+		migrated.autoSaveCovers =
+			oldSettings.autoSaveCovers ?? DEFAULT_SETTINGS.autoSaveCovers
+	}
+
+	return migrated
 }
 
 export function loadSettings(): AppSettings {
 	try {
 		const saved = localStorage.getItem('ai-radio-settings')
+		const versionStr = localStorage.getItem('ai-radio-settings-version')
+		const savedVersion = versionStr ? parseInt(versionStr, 10) : 1
+
 		if (saved) {
-			const loaded = {...DEFAULT_SETTINGS, ...JSON.parse(saved)}
-			return loaded
+			const loaded = JSON.parse(saved)
+			if (savedVersion < SETTINGS_VERSION) {
+				const migrated = migrateSettings(loaded, savedVersion)
+				saveSettings(migrated)
+				localStorage.setItem(
+					'ai-radio-settings-version',
+					String(SETTINGS_VERSION),
+				)
+				return migrated
+			}
+			return {...DEFAULT_SETTINGS, ...loaded}
 		}
 	} catch (e) {
 		console.error('Failed to load settings:', e)
@@ -98,6 +136,37 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
 	localStorage.setItem('ai-radio-settings', JSON.stringify(settings))
+	localStorage.setItem('ai-radio-settings-version', String(SETTINGS_VERSION))
+}
+
+export function exportSettings(): string {
+	const saved = localStorage.getItem('ai-radio-settings')
+	const version = localStorage.getItem('ai-radio-settings-version')
+	const data = {
+		settings: saved ? JSON.parse(saved) : DEFAULT_SETTINGS,
+		version: version ? parseInt(version, 10) : SETTINGS_VERSION,
+		exportedAt: new Date().toISOString(),
+	}
+	return JSON.stringify(data, null, 2)
+}
+
+export function importSettings(jsonString: string): boolean {
+	try {
+		const data = JSON.parse(jsonString)
+		if (!data.settings || typeof data.settings !== 'object') {
+			return false
+		}
+		const migrated = migrateSettings(data.settings, data.version || 1)
+		saveSettings(migrated)
+		return true
+	} catch {
+		return false
+	}
+}
+
+export function resetSettings(): void {
+	localStorage.removeItem('ai-radio-settings')
+	localStorage.removeItem('ai-radio-settings-version')
 }
 
 export function generateScriptFallback(topic: string): string {
