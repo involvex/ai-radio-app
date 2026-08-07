@@ -856,12 +856,68 @@ async function handleSimilar() {
 ></audio>
 
 <style>
+  @keyframes gradientShift {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% {
+      box-shadow: 0 0 5px rgba(0, 255, 65, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 20px rgba(0, 255, 65, 0.6), 0 0 30px rgba(0, 255, 65, 0.4);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   :global(body) {
     font-family: "Courier New", monospace;
     background: #0a0a0a;
     color: #00ff41;
     min-height: 100vh;
     margin: 0;
+    background-image: 
+      radial-gradient(ellipse at 20% 20%, #001100 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, #002200 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, #003311 0%, transparent 60%),
+      radial-gradient(ellipse at 0% 100%, #0a0a0a 0%, transparent 40%);
+    background-size: 200% 200%;
+    animation: gradientShift 20s ease infinite;
   }
 
   .scanlines {
@@ -887,6 +943,7 @@ async function handleSimilar() {
     padding: 1.5rem;
     min-height: 100vh;
     position: relative;
+    animation: slideUp 0.5s ease-out, fadeIn 0.3s ease-out;
   }
 
   .header {
@@ -896,6 +953,7 @@ async function handleSimilar() {
     border-bottom: 2px solid #003311;
     padding-bottom: 1rem;
     margin-bottom: 2rem;
+    animation: slideUp 0.5s ease-out 0.1s both, fadeIn 0.3s ease-out 0.1s both;
   }
 
   .header h1 {
@@ -917,10 +975,16 @@ async function handleSimilar() {
     padding: 0.5rem;
     cursor: pointer;
     font-size: 1.2rem;
+    transition: all 0.2s ease;
   }
 
   .icon-btn:hover {
     background: #003311;
+    transform: scale(1.05);
+  }
+
+  .icon-btn:active {
+    transform: scale(0.95);
   }
 
   .status-indicator {
@@ -972,12 +1036,14 @@ async function handleSimilar() {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    animation: slideUp 0.5s ease-out 0.2s both, fadeIn 0.3s ease-out 0.2s both;
   }
 
   .input-group {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    animation: slideUp 0.4s ease-out calc(0.25s + var(--i, 0) * 0.1s) both, fadeIn 0.3s ease-out calc(0.25s + var(--i, 0) * 0.1s) both;
   }
 
   .input-group label {
@@ -993,12 +1059,12 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 1rem;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   .input-group input:focus {
     border-color: #00ff41;
-    box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
   }
 
   .input-group input::placeholder {
@@ -1014,6 +1080,11 @@ async function handleSimilar() {
     display: flex;
     gap: 1rem;
     flex-wrap: wrap;
+    animation: slideUp 0.5s ease-out 0.3s both, fadeIn 0.3s ease-out 0.3s both;
+  }
+
+  .btn-primary, .btn-secondary, .btn-history, .btn-dice, .btn-random, .btn-action, .category-btn {
+    transition: all 0.2s ease;
   }
 
   .btn-primary, .btn-secondary, .btn-history {
@@ -1024,13 +1095,17 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 1rem;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .btn-primary:hover:not(:disabled), .btn-secondary:hover, .btn-history:hover {
+  .btn-primary:hover:not(:disabled), .btn-secondary:hover, .btn-history:hover, .btn-dice:hover, .btn-random:hover {
     background: #00ff41;
     color: #0a0a0a;
     box-shadow: 0 0 20px rgba(0, 255, 65, 0.4);
+    transform: scale(1.02);
+  }
+
+  .btn-primary:active:not(:disabled), .btn-secondary:active, .btn-history:active, .btn-dice:active, .btn-random:active {
+    transform: scale(0.98);
   }
 
   .btn-primary:disabled {
@@ -1043,6 +1118,7 @@ async function handleSimilar() {
     padding: 1.5rem;
     background: #111111;
     border: 1px solid #003311;
+    animation: slideUp 0.5s ease-out 0.1s both, fadeIn 0.3s ease-out 0.1s both;
   }
 
   .player-header {
@@ -1101,6 +1177,7 @@ async function handleSimilar() {
     z-index: 100;
     display: flex;
     flex-direction: column;
+    animation: slideUp 0.4s ease-out, fadeIn 0.3s ease-out;
   }
 
   .history-header {
@@ -1143,6 +1220,13 @@ async function handleSimilar() {
     border: 1px solid #003311;
     margin-bottom: 0.5rem;
     background: #111111;
+    transition: all 0.2s ease;
+  }
+
+  .episode-card:hover {
+    border-color: #00ff41;
+    box-shadow: 0 0 15px rgba(0, 255, 65, 0.15);
+    transform: translateX(4px);
   }
 
   .episode-info {
@@ -1199,6 +1283,7 @@ async function handleSimilar() {
     max-width: 500px;
     max-height: 90vh;
     overflow-y: auto;
+    animation: slideUp 0.4s ease-out, fadeIn 0.3s ease-out;
   }
 
   .settings-header {
@@ -1280,6 +1365,79 @@ async function handleSimilar() {
     accent-color: #555;
   }
 
+  /* Scrollbar styling */
+  .history-list::-webkit-scrollbar,
+  .generation-logs::-webkit-scrollbar,
+  .settings-panel::-webkit-scrollbar,
+  .transcript-list::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .history-list::-webkit-scrollbar-track,
+  .generation-logs::-webkit-scrollbar-track,
+  .settings-panel::-webkit-scrollbar-track,
+  .transcript-list::-webkit-scrollbar-track {
+    background: #003311;
+  }
+
+  .history-list::-webkit-scrollbar-thumb,
+  .generation-logs::-webkit-scrollbar-thumb,
+  .settings-panel::-webkit-scrollbar-thumb,
+  .transcript-list::-webkit-scrollbar-thumb {
+    background: #00ff41;
+    border-radius: 3px;
+  }
+
+  .history-list::-webkit-scrollbar-thumb:hover,
+  .generation-logs::-webkit-scrollbar-thumb:hover,
+  .settings-panel::-webkit-scrollbar-thumb:hover,
+  .transcript-list::-webkit-scrollbar-thumb:hover {
+    background: #00cc33;
+  }
+
+  /* Hide scrollbar on mobile */
+  @media (max-width: 600px) {
+    .history-list,
+    .generation-logs,
+    .settings-panel,
+    .transcript-list {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .history-list::-webkit-scrollbar,
+    .generation-logs::-webkit-scrollbar,
+    .settings-panel::-webkit-scrollbar,
+    .transcript-list::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  /* Focus styles for links and buttons */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid #00ff41;
+    outline-offset: 2px;
+  }
+
+  /* Pulse glow for active elements */
+  .cover-art,
+  .player-section:has(audio[playing]) {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  /* Generation progress animation */
+  .generation-progress {
+    animation: slideUp 0.4s ease-out, fadeIn 0.3s ease-out;
+  }
+
+  /* Transcript player animation */
+  .transcript-player {
+    animation: slideUp 0.4s ease-out 0.1s both, fadeIn 0.3s ease-out 0.1s both;
+  }
+
   .voice-select select {
     width: 100%;
     background: #111111;
@@ -1289,10 +1447,12 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 0.875rem;
     cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   .voice-select select:focus {
     border-color: #00ff41;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
     outline: none;
   }
 
@@ -1410,12 +1570,17 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
   }
 
   .category-btn:hover {
     border-style: solid;
     background: #003311;
+    transform: scale(1.02);
+  }
+
+  .category-btn:active {
+    transform: scale(0.98);
   }
 
   .post-actions {
@@ -1433,7 +1598,7 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
   }
 
   .btn-action:hover:not(:disabled) {
@@ -1441,6 +1606,11 @@ async function handleSimilar() {
     border-color: #00ff41;
     color: #00ff41;
     box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+    transform: scale(1.02);
+  }
+
+  .btn-action:active:not(:disabled) {
+    transform: scale(0.98);
   }
 
   .btn-action:disabled {
@@ -1457,10 +1627,12 @@ async function handleSimilar() {
     font-family: inherit;
     font-size: 0.875rem;
     cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   .style-select select:focus {
     border-color: #00ff41;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
     outline: none;
   }
 </style>
