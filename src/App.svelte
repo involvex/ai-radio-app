@@ -16,6 +16,7 @@ import AudioVisualizer from "./components/AudioVisualizer.svelte";
 import TranscriptPlayer from "./components/TranscriptPlayer.svelte";
 import CoverArt from "./components/CoverArt.svelte";
 import { segmentsToTranscript } from "./lib/transcript-player";
+import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, formatQuotaDisplay, getQuotaColors } from "./lib/local-quota";
 
   let topic = $state("");
   let link = $state("");
@@ -45,6 +46,14 @@ import { segmentsToTranscript } from "./lib/transcript-player";
   let coverDataUrl = $state<string | null>(null);
   let currentEpisode = $state<Episode | null>(null);
   let isTransitioning = $state(false);
+
+  let quotaDisplay = $state(getQuotaDisplay());
+  let quotaColors = $state(getQuotaColors());
+
+  function refreshQuota() {
+    quotaDisplay = getQuotaDisplay();
+    quotaColors = getQuotaColors();
+  }
 
   let selectedCategory = $state<TopicCategory | 'all'>('all');
   let categories = $derived(getCategories());
@@ -132,6 +141,22 @@ import { segmentsToTranscript } from "./lib/transcript-player";
 
 async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
   if (!topic.trim()) return
+
+  const activeTopic = mode === 'similar' && similarTopic ? similarTopic : topic
+
+  const generationQuota = checkQuota('generation', 1);
+  if (!generationQuota.allowed) {
+    errorMessage = `Tageslimit erreicht: Maximale ${generationQuota.limit} Generationen pro Tag.`;
+    return;
+  }
+
+  const estimatedChars = activeTopic.length * 500;
+  const characterQuota = checkQuota('character', estimatedChars);
+  if (!characterQuota.allowed) {
+    errorMessage = `Zeichenlimit erreicht: Noch ${characterQuota.remaining.toLocaleString()} Zeichen verfügbar.`;
+    return;
+  }
+
   isGenerating = true
   localGenerating = settings.apiProvider === 'local'
   errorMessage = ""
@@ -141,8 +166,6 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
   generationLogs = []
   parsedScript = null
   speakerSegments = []
-
-  const activeTopic = mode === 'similar' && similarTopic ? similarTopic : topic
 
   let linkContent: string | undefined
 
@@ -276,6 +299,12 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
     const episodeId = await saveEpisode(episode)
     await loadHistory()
     currentEpisode = {...episode, id: episodeId}
+
+    incrementUsage('generation', 1);
+    incrementUsage('character', script.length);
+    const durationMinutes = Math.ceil((audioElement?.duration || 0) / 60);
+    incrementUsage('audio', durationMinutes);
+    refreshQuota();
 
     updateStage('complete', 'Generation complete!')
     generationProgress = 100
@@ -528,6 +557,11 @@ async function handleSimilar() {
           <span class="badge">OFFLINE</span>
         {/if}
       </span>
+    </div>
+    <div class="quota-display">
+      <span style="color: {quotaColors.generations}">▣ Gen: {quotaDisplay.generations.used}/{quotaDisplay.generations.limit}</span>
+      <span style="color: {quotaColors.characters}">▣ Char: {quotaDisplay.characters.used.toLocaleString()}/{quotaDisplay.characters.limit.toLocaleString()}</span>
+      <span style="color: {quotaColors.audio}">▣ Audio: {quotaDisplay.audio.used}/{quotaDisplay.audio.limit}min</span>
     </div>
   </header>
 
@@ -883,8 +917,9 @@ async function handleSimilar() {
           </div>
         </div>
 
-        <div class="settings-footer">
+<div class="settings-footer">
           <button class="btn-secondary" onclick={clearApiKey}>API Key löschen</button>
+          <button class="btn-secondary" onclick={() => { resetQuota(); refreshQuota(); }}>[ 🔄 RESET QUOTA ]</button>
           <button class="btn-primary" onclick={saveSettingsAndClose}>[ SPEICHERN ]</button>
         </div>
       </div>
@@ -1010,6 +1045,17 @@ async function handleSimilar() {
     display: flex;
     align-items: center;
     gap: 1rem;
+  }
+
+  .quota-display {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #003311;
+    font-size: 0.75rem;
+    font-family: inherit;
+    flex-wrap: wrap;
   }
 
   .icon-btn {
