@@ -1,25 +1,56 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#001a00"/>
-      <stop offset="100%" style="stop-color:#000000"/>
-    </linearGradient>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#00ff41"/>
-      <stop offset="100%" style="stop-color:#00aa2a"/>
-    </linearGradient>
+    <radialGradient id="bg" cx="512" cy="512" r="716" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111111"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="512" cy="512" r="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#003311" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#0a0a0a" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="1024" height="1024" rx="128" fill="url(#bg)"/>
-  <g transform="translate(512, 480)">
-    <circle r="40" fill="url(#glow)"/>
-    <rect x="-8" y="40" width="16" height="200" fill="url(#glow)"/>
-    <rect x="-60" y="80" width="120" height="16" fill="url(#glow)"/>
-    <rect x="-100" y="120" width="200" height="16" fill="url(#glow)"/>
-    <rect x="-140" y="160" width="280" height="16" fill="url(#glow)"/>
-    <rect x="-180" y="200" width="360" height="16" fill="url(#glow)"/>
-    <circle r="280" fill="none" stroke="#00ff41" stroke-width="4" opacity="0.3"/>
-    <circle r="340" fill="none" stroke="#00ff41" stroke-width="3" opacity="0.2"/>
-    <circle r="400" fill="none" stroke="#00ff41" stroke-width="2" opacity="0.1"/>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+    <rect width="4" height="4" fill="transparent"/>
+    <line x1="0" y1="0" x2="4" y2="0" stroke="#000000" stroke-opacity="0.3" stroke-width="1"/>
+  </pattern>
+  <rect width="1024" height="1024" fill="url(#scanlines)"/>
+
+  <g stroke-linecap="round" fill="none">
+    <path d="M 512 512 m -461 0 a 461 461 0 0 1 461 -461" stroke="#00ff41" stroke-opacity="0.15" stroke-width="16"/>
+    <path d="M 512 512 m -461 0 a 461 461 0 0 1 922 0" stroke="#00ff41" stroke-opacity="0.12" stroke-width="14"/>
+    <path d="M 512 512 m -373 0 a 373 373 0 0 1 373 -373" stroke="#00ff41" stroke-opacity="0.2" stroke-width="14"/>
+    <path d="M 512 512 m -285 0 a 285 285 0 0 1 285 -285" stroke="#00ff41" stroke-opacity="0.25" stroke-width="12"/>
+    <path d="M 512 512 m -197 0 a 197 197 0 0 1 197 -197" stroke="#00ff41" stroke-opacity="0.3" stroke-width="10"/>
+
+    <path d="M 256 410 a 256 256 0 0 1 512 0" stroke="#00ff41" stroke-opacity="0.4" stroke-width="14"/>
+    <path d="M 170 410 a 342 342 0 0 1 684 0" stroke="#00ff41" stroke-opacity="0.3" stroke-width="12"/>
+    <path d="M 84 410 a 428 428 0 0 1 856 0" stroke="#00ff41" stroke-opacity="0.2" stroke-width="10"/>
+    <path d="M -2 410 a 514 514 0 0 1 1028 0" stroke="#00ff41" stroke-opacity="0.12" stroke-width="8"/>
+
+    <line x1="512" y1="256" x2="512" y2="640" stroke="#00ff41" stroke-width="18"/>
+    <line x1="460" y1="256" x2="512" y2="205" stroke="#00ff41" stroke-width="18"/>
+    <line x1="512" y1="205" x2="564" y2="256" stroke="#00ff41" stroke-width="18"/>
+
+    <circle cx="512" cy="154" r="6" fill="#00ff41"/>
   </g>
-  <text x="512" y="900" font-family="monospace" font-size="80" fill="#00ff41" text-anchor="middle" font-weight="bold">AI RADIO</text>
+
+  <g font-family="'Courier New', 'Consolas', monospace" text-anchor="middle">
+    <text x="512" y="780" font-size="180" font-weight="bold" fill="#00ff41" filter="url(#textGlow)">AI</text>
+    <text x="512" y="880" font-size="60" font-weight="normal" fill="#00aa2a">RADIO</text>
+  </g>
+
+  <defs>
+    <filter id="textGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
 </svg>
