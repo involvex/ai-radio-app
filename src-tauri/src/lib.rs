@@ -82,7 +82,7 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
             .plugin(tauri_plugin_shell::init())
             .plugin(tauri_plugin_dialog::init());
     }
-        .manage(local_llm::LocalLlmState::default());
+    builder = builder.manage(local_llm::LocalLlmState::default());
 
 Ok(builder
   .invoke_handler(tauri::generate_handler![
