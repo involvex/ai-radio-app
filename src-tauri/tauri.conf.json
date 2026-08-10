@@ -26,7 +26,11 @@
 			}
 		],
 		"security": {
-			"csp": null
+			"csp": "default-src 'self' 'unsafe-inline' asset: https://asset.localhost; media-src 'self' blob: data:; connect-src 'self' https: wss:",
+			"assetProtocol": {
+				"enable": true,
+				"scope": ["**"]
+			}
 		}
 	},
 	"bundle": {

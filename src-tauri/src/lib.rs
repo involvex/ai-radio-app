@@ -63,6 +63,14 @@ mod desktop {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info.to_string();
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_default();
+        eprintln!("FATAL PANIC at {}: {}", loc, msg);
+    }));
     match run_inner() {
         Ok(()) => {},
         Err(e) => {
