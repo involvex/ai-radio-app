@@ -63,7 +63,13 @@ mod desktop {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _ = run_inner();
+    match run_inner() {
+        Ok(()) => {},
+        Err(e) => {
+            eprintln!("FATAL: app initialization failed: {}", e);
+            std::process::abort();
+        }
+    }
 }
 
 fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,10 +78,10 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_shell::init());
+        builder = builder
+            .plugin(tauri_plugin_shell::init())
+            .plugin(tauri_plugin_dialog::init());
     }
-    builder = builder
-        .plugin(tauri_plugin_dialog::init())
         .manage(local_llm::LocalLlmState::default());
 
 Ok(builder

@@ -14099,12 +14099,10 @@ var gw = (function (e) {
 						n instanceof HTMLCanvasElement &&
 						(n.id = 'canvas_webgpu')
 				else var n = new OffscreenCanvas(1, 1)
-				;(n
-					.getContext('webgpu')
-					.configure({
-						device: r,
-						format: navigator.gpu.getPreferredCanvasFormat(),
-					}),
+				;(n.getContext('webgpu').configure({
+					device: r,
+					format: navigator.gpu.getPreferredCanvasFormat(),
+				}),
 					(this.h.preinitializedWebGPUDevice = r))
 			}
 			aa() {
