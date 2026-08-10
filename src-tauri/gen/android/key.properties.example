@@ -1,0 +1,24 @@
+# Release signing configuration
+# Copy this file to key.properties and fill in your values
+# OR use environment variables instead (preferred for CI/CD)
+
+# Local keystore path (or use KEYSTORE_PATH env var)
+KEYSTORE_PATH=../ai-radio-release.keystore
+
+# Keystore password (or use KEYSTORE_PASSWORD env var)
+# KEYSTORE_PASSWORD=
+
+# Key alias (or use KEY_ALIAS env var)
+KEY_ALIAS=airadio
+
+# Key password (or use KEY_PASSWORD env var)
+# KEY_PASSWORD=
+
+# --- Generate a new keystore (run once) ---
+# keytool -genkeypair -v -keystore ai-radio-release.keystore \
+#   -alias airadio -keyalg RSA -keysize 2048 \
+#   -validity 10000 -storepass <PASSWORD> -keypass <PASSWORD>
+#
+# Then either:
+# 1. Copy the keystore to src-tauri/gen/android/
+# 2. Set KEYSTORE_PATH env var to the keystore location

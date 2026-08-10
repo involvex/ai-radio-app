@@ -13,6 +13,40 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Load release signing config from local.properties or environment variables
+val releaseStoreFile = System.getenv("KEYSTORE_PATH")
+    ?: run {
+        val localProps = file("local.properties")
+        if (localProps.exists()) {
+            val props = Properties().apply { localProps.inputStream().use { load(it) } }
+            props.getProperty("KEYSTORE_PATH")
+        } else null
+    }
+val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
+    ?: run {
+        val localProps = file("local.properties")
+        if (localProps.exists()) {
+            val props = Properties().apply { localProps.inputStream().use { load(it) } }
+            props.getProperty("KEYSTORE_PASSWORD")
+        } else null
+    }
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+    ?: run {
+        val localProps = file("local.properties")
+        if (localProps.exists()) {
+            val props = Properties().apply { localProps.inputStream().use { load(it) } }
+            props.getProperty("KEY_ALIAS", "airadio")
+        } else "airadio"
+    }
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+    ?: run {
+        val localProps = file("local.properties")
+        if (localProps.exists()) {
+            val props = Properties().apply { localProps.inputStream().use { load(it) } }
+            props.getProperty("KEY_PASSWORD")
+        } else null
+    }
+
 android {
     compileSdk = 36
     namespace = "com.airoadio.desktop"
@@ -25,10 +59,18 @@ android {
             keyPassword = "android"
         }
         create("release") {
-            storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            if (releaseStoreFile != null && releaseStorePassword != null && releaseKeyPassword != null) {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            } else {
+                // Fallback to debug keystore if no release config provided
+                storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
