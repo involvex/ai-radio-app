@@ -14,7 +14,7 @@ val tauriProperties = Properties().apply {
 }
 
 android {
-    compileSdk = 34
+    compileSdk = 36
     namespace = "com.airoadio.desktop"
 
     signingConfigs {
