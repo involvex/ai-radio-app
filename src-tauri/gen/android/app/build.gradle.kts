@@ -13,42 +13,31 @@ val tauriProperties = Properties().apply {
     }
 }
 
-val releaseStorePath = System.getenv("KEYSTORE_PATH")
-    ?: run {
-        val localProps = file("local.properties")
-        if (localProps.exists()) {
-            val props = Properties().apply { localProps.inputStream().use { load(it) } }
-            props.getProperty("KEYSTORE_PATH")
-        } else null
-    }
-val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
-    ?: run {
-        val localProps = file("local.properties")
-        if (localProps.exists()) {
-            val props = Properties().apply { localProps.inputStream().use { load(it) } }
-            props.getProperty("KEYSTORE_PASSWORD")
-        } else null
-    }
-val releaseKeyAlias = System.getenv("KEY_ALIAS")
-    ?: run {
-        val localProps = file("local.properties")
-        if (localProps.exists()) {
-            val props = Properties().apply { localProps.inputStream().use { load(it) } }
-            props.getProperty("KEY_ALIAS", "airadio")
-        } else "airadio"
-    }
-val releaseKeyPassword = System.getenv("KEY_PASSWORD")
-    ?: run {
-        val localProps = file("local.properties")
-        if (localProps.exists()) {
-            val props = Properties().apply { localProps.inputStream().use { load(it) } }
-            props.getProperty("KEY_PASSWORD")
-        } else null
-    }
-
 android {
     compileSdk = 34
     namespace = "com.airoadio.desktop"
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        create("release") {
+            val keyPath = System.getenv("KEYSTORE_PATH")
+                ?: file("local.properties").let { f ->
+                    if (f.exists()) {
+                        val p = Properties().apply { f.inputStream().use { load(it) } }
+                        p.getProperty("KEYSTORE_PATH")
+                    } else null
+                }
+            storeFile = if (keyPath != null) file(keyPath) else file(System.getProperty("user.home")).resolve(".android/debug.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+        }
+    }
 
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -59,24 +48,7 @@ android {
             tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName =
             tauriProperties.getProperty("tauri.android.versionName", "1.0")
-        vectorDrawables { enabled = true }
     }
-
-    signingConfigs {
-        debug {
-            storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-        release {
-            storeFile = if (releaseStorePath != null) file(releaseStorePath) else file(System.getProperty("user.home")).resolve(".android/debug.keystore")
-            storePassword = releaseStorePassword ?: "android"
-            keyAlias = releaseKeyAlias ?: "androiddebugkey"
-            keyPassword = releaseKeyPassword ?: "android"
-        }
-    }
-
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
@@ -101,14 +73,12 @@ android {
             )
         }
     }
-
     kotlinOptions {
         jvmTarget = "1.8"
     }
     buildFeatures {
         buildConfig = true
     }
-
 }
 
 rust {
@@ -128,6 +98,7 @@ dependencies {
 
 apply(from = "tauri.build.gradle.kts")
 
+// Skip Rust build tasks since Tauri CLI already compiled and symlinked .so files
 tasks.matching { it.name.startsWith("rustBuild") }.configureEach {
     enabled = false
 }
