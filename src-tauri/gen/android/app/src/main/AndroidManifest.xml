@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -10,6 +12,11 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.ai_radio"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+
+        <!-- Adaptive icon support for home screen -->
+        <adaptiveIcon
+            android:drawable="@drawable/adaptive_icon" />
+
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
@@ -25,13 +32,36 @@
         </activity>
 
         <provider
-          android:name="androidx.core.content.FileProvider"
-          android:authorities="${applicationId}.fileprovider"
-          android:exported="false"
-          android:grantUriPermissions="true">
-          <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/file_paths" />
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Support for various screen sizes -->
+        <supports-screens
+            android:smallScreens="true"
+            android:normalScreens="true"
+            android:largeScreens="true"
+            android:xlargeScreens="true"
+            android:requiresSmallestWidthDp="0dp" />
+
+        <!-- Compatibility for different Android versions -->
+        <compatible-screens>
+            <screen android:screenSize="small" />
+            <screen android:screenSize="medium" />
+            <screen android:screenSize="large" />
+            <screen android:screenSize="xlarge" />
+            <screen android:screenDensity="160" />
+            <screen android:screenDensity="240" />
+            <screen android:screenDensity="320" />
+            <screen android:screenDensity="480" />
+            <screen android:screenDensity="640" />
+            <screen android:screenDensity="960" />
+            <screen android:screenDensity="1280" />
+        </compatible-screens>
     </application>
 </manifest>
