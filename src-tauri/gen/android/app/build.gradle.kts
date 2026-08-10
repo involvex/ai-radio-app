@@ -13,8 +13,7 @@ val tauriProperties = Properties().apply {
     }
 }
 
-// Load release signing config from local.properties or environment variables
-val releaseStoreFile = System.getenv("KEYSTORE_PATH")
+val releaseStorePath = System.getenv("KEYSTORE_PATH")
     ?: run {
         val localProps = file("local.properties")
         if (localProps.exists()) {
@@ -48,42 +47,36 @@ val releaseKeyPassword = System.getenv("KEY_PASSWORD")
     }
 
 android {
-    compileSdk = 36
+    compileSdk = 34
     namespace = "com.airoadio.desktop"
-
-    signingConfigs {
-        getByName("debug") {
-            storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-        create("release") {
-            if (releaseStoreFile != null && releaseStorePassword != null && releaseKeyPassword != null) {
-                storeFile = file(releaseStoreFile)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
-            } else {
-                // Fallback to debug keystore if no release config provided
-                storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-            }
-        }
-    }
 
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.airoadio.desktop"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 34
         versionCode =
             tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName =
             tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        vectorDrawables { enabled = true }
     }
+
+    signingConfigs {
+        debug {
+            storeFile = file(System.getProperty("user.home")).resolve(".android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        release {
+            storeFile = if (releaseStorePath != null) file(releaseStorePath) else file(System.getProperty("user.home")).resolve(".android/debug.keystore")
+            storePassword = releaseStorePassword ?: "android"
+            keyAlias = releaseKeyAlias ?: "androiddebugkey"
+            keyPassword = releaseKeyPassword ?: "android"
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
@@ -108,12 +101,14 @@ android {
             )
         }
     }
+
     kotlinOptions {
         jvmTarget = "1.8"
     }
     buildFeatures {
         buildConfig = true
     }
+
 }
 
 rust {
@@ -133,7 +128,6 @@ dependencies {
 
 apply(from = "tauri.build.gradle.kts")
 
-// Skip Rust build tasks since Tauri CLI already compiled and symlinked .so files
 tasks.matching { it.name.startsWith("rustBuild") }.configureEach {
     enabled = false
 }
