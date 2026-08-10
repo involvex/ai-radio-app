@@ -103,3 +103,6 @@ export function getCategories(): {id: keyof typeof TOPICS; name: string}[] {
 
 export {TOPICS, TOPIC_CATEGORIES, CATEGORY_NAMES}
 export type TopicCategory = keyof typeof TOPICS
+
+// Alias for backward compatibility
+export const getRandomTopicByCategory = getRandomTopic

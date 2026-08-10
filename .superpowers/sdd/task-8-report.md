@@ -1,40 +1,49 @@
-# Task 8 Report: README.md
+# Task 8 Report: Local Quota / Usage Tracking
 
-## What I Implemented
+## Status: DONE
 
-Created a comprehensive `README.md` for the AI Radio project documenting:
+## Commits
 
-1. **Project Overview** - Cross-platform radio script generator with both cloud and local AI
-2. **Features List** - All key features including on-device AI, TTS, episode history
-3. **Quick Start** - Development and building instructions
-4. **On-Device AI Setup** - Detailed guide for using llama.cpp locally, including:
-   - How it works
-   - Getting started steps
-   - Recommended models with RAM requirements
-   - Model storage locations
-   - Model source links
-5. **Cloud LLM Setup** - Provider comparison and configuration
-6. **Environment Variables** - All configurable variables with examples
-7. **Technologies** - Complete tech stack tables
-8. **Project Structure** - Directory layout with file descriptions
-9. **Development Commands** - All available scripts
-10. **App States** - State machine documentation
+- `02f48cd` - feat: add local quota/usage tracking (Task 8)
 
-## Files Changed
+## Test Results
 
-| File        | Action              |
-| ----------- | ------------------- |
-| `README.md` | Created (223 lines) |
+- `bun run lint` - PASS
+- `bun run typecheck` - PASS
 
-## Commit
+## Implementation Summary
 
-```
-18ff18f docs: add comprehensive README with local AI setup guide
-```
+### Created: `src/lib/local-quota.ts`
 
-## Notes
+- `QuotaConfig` interface (dailyGenerations, dailyCharacters, dailyAudioMinutes)
+- `UsageStats` interface (date, generations, characters, audioMinutes, lastReset)
+- `DEFAULT_QUOTA` = { dailyGenerations: 50, dailyCharacters: 100000, dailyAudioMinutes: 120 }
+- `getUsage()` - reads from localStorage, auto-resets on date change
+- `saveUsage(stats)` - saves to localStorage
+- `checkQuota(type, amount)` - returns { allowed, remaining, limit }
+- `incrementUsage(type, amount)` - increments counters
+- `getQuotaDisplay()` - returns formatted data for UI with percentages
+- `resetQuota()` - manual reset for testing
+- `formatQuotaDisplay()` - compact string for display
+- `getQuotaColors()` - returns color codes based on usage percentage
 
-- The README is based on actual project structure and source code analysis
-- On-device AI documentation includes specific model recommendations based on llama.cpp GGUF format
-- All provider endpoints and models match the implementation in `lib.rs` and `settings.ts`
-- The LSP error in `local_llm.rs` is pre-existing and unrelated to this task
+### Modified: `src/App.svelte`
+
+- Added imports from `./lib/local-quota`
+- Added `quotaDisplay` and `quotaColors` reactive state
+- Added `refreshQuota()` function
+- In `tuneIn()`:
+  - Pre-generation quota checks for 'generation' (1) and 'character' (estimated)
+  - Shows error and returns early if quota exceeded
+  - Post-generation increments: generation (1), characters (script.length), audio (duration minutes)
+  - Calls `refreshQuota()` after incrementing
+- Added quota display in header showing: "Gen: X/50 | Char: Y/100K | Audio: Z/120min"
+- Color coding: green (<50%), yellow (<80%), red (>=80%)
+- Added "Reset Quota" button in settings footer
+
+## Concerns
+
+- The pre-existing LSP errors in App.svelte (unrelated to this task) remain:
+  - Missing exports from edge-tts-client, generation-stages, topics modules
+  - Episode type missing speakerSegments and coverDataUrl properties
+- These are pre-existing issues from previous tasks and don't affect the quota functionality

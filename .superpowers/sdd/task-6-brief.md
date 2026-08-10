@@ -3,6 +3,7 @@
 ## Files to Modify
 
 **Modify:**
+
 - `src/App.svelte` (enhance CSS/styles)
 
 ## Steps
@@ -10,6 +11,7 @@
 ### Step 1: Add animated gradient background
 
 In `src/App.svelte` `<style>` section:
+
 - Add animated radial gradient background to `.app` or `:global(body)`
 - Use CSS `@keyframes gradientShift` with 3+ color stops
 - Animate background-position or transform for smooth movement
@@ -19,6 +21,7 @@ In `src/App.svelte` `<style>` section:
 ### Step 2: Add entrance/exit animations
 
 Add CSS animations:
+
 - `@keyframes slideUp` - for panels entering
 - `@keyframes fadeIn` - for content appearing
 - `@keyframes pulseGlow` - for active elements
@@ -28,6 +31,7 @@ Add CSS animations:
 ### Step 3: Add micro-interactions
 
 Add hover/tap feedback:
+
 - Buttons: `transform: scale(0.98)` on active, `scale(1.02)` on hover
 - Cards: `box-shadow` transition on hover
 - Inputs: border glow on focus
@@ -37,17 +41,20 @@ Add hover/tap feedback:
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
 ```
 
 ### Step 5: Add scrollbar styling
 
 Style scrollbars for `.transcript-list`, `.generation-logs`, history panel:
+
 - Thin scrollbar (6px)
 - Green thumb (#00ff41)
 - Dark track (#003311)

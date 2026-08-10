@@ -3,6 +3,7 @@
 ## Files to Modify
 
 **Modify:**
+
 - `src/lib/topics.ts` (enhance topic database)
 - `src/App.svelte` (enhance topic suggestion UI and similar flow)
 
@@ -11,6 +12,7 @@
 ### Step 1: Enhance topics.ts
 
 Modify `src/lib/topics.ts`:
+
 - Expand `TOPICS` array with 30+ diverse topics across categories:
   - Technology: AI, Quantum Computing, Cybersecurity, Robotics, Space Tech
   - Science: Climate, Biology, Physics, Medicine, Neuroscience
@@ -25,6 +27,7 @@ Modify `src/lib/topics.ts`:
 ### Step 2: Enhance TopicSuggestions component in App.svelte
 
 In `src/App.svelte`:
+
 - Add category filter state: `selectedCategory = $state('all')`
 - Add `categories` array from `getAllCategories()`
 - Render category tabs/pills above topic suggestions
@@ -36,6 +39,7 @@ In `src/App.svelte`:
 ### Step 3: Enhance Similar Flow
 
 In `handleSimilar(topic)`:
+
 - Generate new episode with "deeper" mode or related topic
 - Use LLM to suggest related topic based on current episode
 - Add transition animation when switching

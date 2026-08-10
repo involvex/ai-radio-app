@@ -1,81 +1,60 @@
-# Task 9: Integration Testing & Polish - Report
+# Task 9 Report: Settings Persistence & Migration
 
-## What Was Tested
+## Status: DONE
 
-1. **Full pre-build check** (`bun run check`): format + lint:fix + typecheck
-2. **Lint** (`bun run lint`): standalone lint pass
-3. **Rust compilation** (`cargo check`): verify Tauri backend compiles
+## Commit Hash
+
+- `084689f` - Task 9: Add settings persistence & migration (versioning, export/import/reset)
 
 ## Test Results
 
-### `bun run check`
+- `bun run lint`: PASS
+- `bun run typecheck`: PASS
+- `bun run build`: PASS (built in 5.32s, 413.48 kB JS, 24.86 kB CSS)
 
-- **Format (Prettier):** All files formatted, no changes needed
-- **Lint (ESLint):** No errors or warnings
-- **TypeCheck (tsc --noEmit):** No type errors
-- **Result: PASS**
+## Changes Made
 
-### `bun run lint`
+### src/lib/settings.ts
 
-- **Result: PASS** — clean output, no issues
+- Added `SETTINGS_VERSION = 2` constant
+- Extended `AppSettings` interface with new fields:
+  - `visualizerStyle: 'bars' | 'wave' | 'dots'`
+  - `quotaEnabled: boolean`
+  - `autoSaveCovers: boolean`
+- Added `migrateSettings(oldSettings, oldVersion)` function:
+  - Handles v1 → v2 migration with defaults for new fields
+- Modified `loadSettings()` to:
+  - Read version from localStorage (`ai-radio-settings-version`)
+  - Run migration if version < SETTINGS_VERSION
+  - Save migrated settings with new version
+- Added `exportSettings(): string` - returns JSON with settings, version, and export timestamp
+- Added `importSettings(jsonString: string): boolean` - validates and imports with migration
+- Added `resetSettings(): void` - clears localStorage, returns to defaults
+- Updated `saveSettings()` to persist version alongside settings
 
-### `cargo check`
+### src/App.svelte
 
-- **Result: PASS** — compiled in 5.97s, no warnings or errors
+- Imported new functions: `exportSettings`, `importSettings`, `resetSettings`, `SETTINGS_VERSION`
+- Added state: `settingsFileInput` for settings-specific file input
+- Added handler functions:
+  - `handleExportSettings()` - downloads settings.json with version in filename
+  - `triggerSettingsImport()` - triggers file picker
+  - `handleSettingsFileSelect()` - processes imported settings file
+  - `handleResetSettings()` - confirms and resets to defaults
+- Added "Einstellungen Backup" section in settings panel with:
+  - Version display: "Version: v2"
+  - Export Settings button
+  - Import Settings button
+  - Reset to Defaults button (styled red for danger)
+  - Status message display
 
-## Fixes Applied
+## Concerns
 
-**None required.** All checks passed on first run.
+None. All requirements from the brief have been implemented and verified.
 
-## Files Changed
+## Notes
 
-No files were changed during this task.
-
-## Conclusion
-
-The codebase is clean and ready for build. All lint, type-check, formatting, and Rust compilation checks pass without issues.
-
----
-
-## Critical Issues Fixed (Post-Review)
-
-### 1. Path traversal guard in `model_manager.rs`
-
-**Problem:** String prefix check (`starts_with`) on raw paths is unsafe — an attacker could bypass it via path manipulation.
-
-**Fix:** Replaced with `canonicalize()` comparisons:
-
-- `download_model`: Canonicalizes the parent directory of the destination and compares against the canonical models dir.
-- `delete_model`: Canonicalizes the existing file path and checks `starts_with` against the canonical models dir.
-
-### 2. Dialog permissions in `capabilities/default.json`
-
-**Problem:** `pick_model_file` command uses `tauri_plugin_dialog::DialogExt` but dialog permissions were missing from capabilities.
-
-**Fix:** Added `dialog:allow-open`, `dialog:allow-save`, `dialog:allow-ask`, `dialog:allow-message` to the permissions list.
-
-### 3. Sidecar crash detection in `local_llm.rs`
-
-**Problem:** No feedback when the llama-server sidecar crashes — the app would appear stuck.
-
-**Fix:**
-
-- Captures the `Receiver<CommandEvent>` from `spawn()` instead of discarding it.
-- Spawns a tokio task that listens for `Terminated` events on the receiver.
-- Emits `local-llm-error` with exit code when the process terminates unexpectedly.
-- Aborts the monitor task if startup times out.
-
-## Post-Fix Verification
-
-| Check               | Result                    |
-| ------------------- | ------------------------- |
-| `cargo check`       | PASS — compiled in 25.69s |
-| `bun run typecheck` | PASS — no type errors     |
-
-## Files Changed
-
-| File                                  | Change                                                      |
-| ------------------------------------- | ----------------------------------------------------------- |
-| `src-tauri/src/model_manager.rs`      | Canonicalized path traversal guards                         |
-| `src-tauri/capabilities/default.json` | Added dialog permissions                                    |
-| `src-tauri/src/local_llm.rs`          | Added sidecar crash monitoring via `Receiver<CommandEvent>` |
+- Pre-existing accessibility warnings and unused CSS selectors in the codebase are unrelated to this task
+- The migration system is forward-compatible for future versions
+- Settings export includes timestamp for auditability
+- Import validates JSON structure and runs migration automatically
