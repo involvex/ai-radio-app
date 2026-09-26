@@ -19,9 +19,11 @@
     audioElement: HTMLAudioElement | null
     episodeId: string
     episodeTitle: string
+    onRegenerate?: (index: number) => void
+    regeneratingIndex?: number | null
   }
 
-  let { transcript, currentTime, duration, audioElement, episodeId, episodeTitle }: Props = $props()
+  let { transcript, currentTime, duration, audioElement, episodeId, episodeTitle, onRegenerate, regeneratingIndex = null }: Props = $props()
 
   let bookmarks: Bookmark[] = $state([])
   let showBookmarksOnly = $state(false)
@@ -108,14 +110,27 @@
             <span class="timecode">{formatTime(line.startTime)}</span>
           </div>
           <div class="line-text">{line.text}</div>
-          <button
-            class="bookmark-btn"
-            class:active={line.isBookmarked}
-            onclick={(e) => { e.stopPropagation(); handleBookmark(line); }}
-            aria-label={line.isBookmarked ? 'Bookmark entfernen' : 'Bookmark setzen'}
-          >
-            {line.isBookmarked ? '★' : '☆'}
-          </button>
+          <div class="line-actions">
+            {#if onRegenerate}
+              <button
+                class="regen-btn"
+                disabled={regeneratingIndex !== null}
+                onclick={(e) => { e.stopPropagation(); onRegenerate(line.index); }}
+                aria-label={regeneratingIndex === line.index ? 'Segment wird neu generiert' : 'Segment neu generieren'}
+                title="Segment neu generieren"
+              >
+                {regeneratingIndex === line.index ? '⏳' : '🔄'}
+              </button>
+            {/if}
+            <button
+              class="bookmark-btn"
+              class:active={line.isBookmarked}
+              onclick={(e) => { e.stopPropagation(); handleBookmark(line); }}
+              aria-label={line.isBookmarked ? 'Bookmark entfernen' : 'Bookmark setzen'}
+            >
+              {line.isBookmarked ? '★' : '☆'}
+            </button>
+          </div>
         </div>
       {/each}
     {/if}
@@ -245,9 +260,6 @@
   }
 
   .bookmark-btn {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
     background: none;
     border: none;
     color: #005511;
@@ -268,6 +280,35 @@
 
   .bookmark-btn.active:hover {
     color: #ffcc00;
+  }
+
+  .line-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+  }
+
+  .regen-btn {
+    background: none;
+    border: none;
+    color: #005511;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+    transition: color 0.2s;
+  }
+
+  .regen-btn:hover:not(:disabled) {
+    color: #00ff41;
+  }
+
+  .regen-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   @media (max-width: 600px) {

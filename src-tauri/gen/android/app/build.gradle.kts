@@ -44,6 +44,9 @@ android {
         applicationId = "com.airoadio.desktop"
         minSdk = 24
         targetSdk = 34
+        // Keep universal APK (all ABIs) per user request — no abiFilters/splits.
+        // Trim bundled string resources to cut APK size without dropping ABIs.
+        resourceConfigurations.addAll(listOf("en", "de"))
         versionCode =
             tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName =
@@ -66,6 +69,8 @@ android {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            //Shrink unused resources; universal APK is kept (no ABI splits).
+            isShrinkResources = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))

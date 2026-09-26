@@ -19,6 +19,8 @@
 		"lint:fix": "eslint src --fix",
 		"preview": "vite preview",
 		"tauri": "tauri",
+		"tauri:android:apk": "tauri android build",
+		"tauri:android:debug": "tauri android build --debug",
 		"tauri:build": "tauri build",
 		"tauri:build:dev": "tauri build --profile dev",
 		"tauri:dev": "tauri dev",

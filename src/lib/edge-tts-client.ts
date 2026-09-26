@@ -15,6 +15,63 @@ export type TtsOptions = Partial<{
 	pitch: string
 }>
 
+/** Escape user text so it can't break the SSML XML envelope. */
+export function escapeSsml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;')
+}
+
+/** Insert short SSML pauses at sentence boundaries for a radio-like flow. */
+export function withSentencePauses(escapedText: string): string {
+	return escapedText.replace(
+		/([.!?…])\s+(?=[A-ZÄÖÜA-Z„"“])/g,
+		'$1<break time="300ms"/> ',
+	)
+}
+
+/** Per-style prosody: keeps news calm, entertainment lively, chill relaxed. */
+export interface StyleProsody {
+	rate: string
+	pitch: string
+	/** Extra pitch lift for the GUEST voice so dialogue has contrast. */
+	guestPitchLiftHz: number
+}
+
+export function prosodyForStyle(style: string): StyleProsody {
+	switch (style) {
+		case 'news':
+			return {rate: '+0%', pitch: '+0Hz', guestPitchLiftHz: 1}
+		case 'academic':
+			return {rate: '-5%', pitch: '+0Hz', guestPitchLiftHz: 1}
+		case 'casual':
+			return {rate: '+5%', pitch: '+0Hz', guestPitchLiftHz: 2}
+		case 'entertaining':
+			return {rate: '+8%', pitch: '+1Hz', guestPitchLiftHz: 2}
+		case 'podcast':
+		case 'chill':
+			return {rate: '-5%', pitch: '-1Hz', guestPitchLiftHz: 2}
+		default:
+			return {rate: '+0%', pitch: '+0Hz', guestPitchLiftHz: 2}
+	}
+}
+
+/** Resolve effective rate/pitch for a segment (guest gets a liveliness lift). */
+export function prosodyForSegment(
+	style: string,
+	speaker: string,
+): {rate: string; pitch: string} {
+	const base = prosodyForStyle(style)
+	if (speaker === 'GUEST' && base.guestPitchLiftHz > 0) {
+		const baseHz = parseInt(base.pitch, 10) || 0
+		return {rate: base.rate, pitch: `+${baseHz + base.guestPitchLiftHz}Hz`}
+	}
+	return {rate: base.rate, pitch: base.pitch}
+}
+
 function getVoiceLang(voice: string): string {
 	if (voice.startsWith('de-')) return 'de-DE'
 	if (voice.startsWith('en-')) return 'en-US'
@@ -170,7 +227,7 @@ export async function ttsEdge(
 					`X-Timestamp:${new Date().toISOString()}Z\r\nPath:ssml\r\n\r\n` +
 					`<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${lang}'>` +
 					`<voice name='${voice}'><prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
-					`${text}</prosody></voice></speak>`
+					`${withSentencePauses(escapeSsml(text))}</prosody></voice></speak>`
 
 				ws.send(ssmlMessage)
 			}
@@ -268,7 +325,10 @@ export const VOICES = {
 	],
 }
 
-export function parseScriptToSegments(script: string): {
+export function parseScriptToSegments(
+	script: string,
+	hostVoice: string = SPEAKER_VOICES.HOST,
+): {
 	segments: SpeakerSegment[]
 	totalDuration: number
 	title: string
@@ -286,7 +346,7 @@ export function parseScriptToSegments(script: string): {
 			segments.push({
 				speaker: 'HOST',
 				text: hostMatch[1].trim(),
-				voice: SPEAKER_VOICES.HOST,
+				voice: hostVoice,
 				effect: 'normal',
 			})
 		} else if (guestMatch) {
@@ -310,7 +370,7 @@ export function parseScriptToSegments(script: string): {
 				segments.push({
 					speaker: 'HOST',
 					text: line.trim(),
-					voice: SPEAKER_VOICES.HOST,
+					voice: hostVoice,
 					effect: 'normal',
 				})
 			}
@@ -340,16 +400,18 @@ function estimateDuration(text: string): number {
 
 export async function ttsToBlobMulti(
 	segments: SpeakerSegment[],
+	style = 'tech',
 ): Promise<Blob> {
 	const audioBuffers: ArrayBuffer[] = []
 
 	for (let i = 0; i < segments.length; i++) {
 		const segment = segments[i]
+		const prosody = prosodyForSegment(style, segment.speaker)
 		try {
 			const buffer = await ttsEdge(segment.text, {
 				voice: segment.voice,
-				rate: '+0%',
-				pitch: '+0Hz',
+				rate: prosody.rate,
+				pitch: prosody.pitch,
 				volume: '+0%',
 			})
 			audioBuffers.push(buffer)
@@ -370,8 +432,8 @@ export async function ttsToBlobMulti(
 				}
 				await ttsWebSpeech(segment.text, {
 					voice: segment.voice,
-					rate: '+0%',
-					pitch: '+0Hz',
+					rate: prosody.rate,
+					pitch: prosody.pitch,
 				})
 				audioBuffers.push(new ArrayBuffer(0))
 			}

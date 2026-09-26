@@ -33,3 +33,12 @@ tauri-plugin-dialog = "2"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+
+# Smaller + faster Android universal APK. Debug builds are unaffected
+# (this profile only applies to --release / release APKs).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

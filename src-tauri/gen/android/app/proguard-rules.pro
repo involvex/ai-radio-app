@@ -12,10 +12,7 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep Tauri WebView JS bridge + MediaPipe (WebView-side, defensive for R8 full mode).
+-keepattributes SourceFile,LineNumberTable
+-keep class com.google.mediapipe.** { *; }
+-keep class androidx.webkit.** { *; }

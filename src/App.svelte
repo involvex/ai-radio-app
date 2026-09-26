@@ -1,9 +1,9 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, type SpeakerSegment } from "./lib/edge-tts-client";
+import { ttsToBlob, VOICES, parseScriptToSegments, ttsToBlobMulti, ttsEdge, ttsHttpFallback, ttsWebSpeech, prosodyForSegment, type SpeakerSegment } from "./lib/edge-tts-client";
 import { STAGE_ORDER, GENERATING_SPEECH_STAGE_INDEX, type GenerationStage } from "./lib/generation-stages";
-import { loadSettings, saveSettings, invokeGenerateScript, type AppSettings, exportSettings, importSettings, resetSettings, SETTINGS_VERSION } from "./lib/settings";
-import { getAllEpisodes, saveEpisode, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
+import { loadSettings, saveSettings, invokeGenerateScript, generateScriptFallback, type AppSettings, exportSettings, importSettings, resetSettings, SETTINGS_VERSION } from "./lib/settings";
+import { getAllEpisodes, saveEpisode, updateEpisodeAudio, deleteEpisode as dbDeleteEpisode, toggleFavorite as dbToggleFavorite, type Episode } from "./lib/db";
 import { exportData, downloadSyncFile, importData } from "./lib/sync";
 import { createShowZip, downloadZip } from "./lib/zip-export";
 import { getRandomTopic, getCategories, getRandomTopicByCategory, getTopicsByCategory, getAllCategories, type TopicCategory } from "./lib/topics";
@@ -46,6 +46,8 @@ import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, form
   let coverDataUrl = $state<string | null>(null);
   let currentEpisode = $state<Episode | null>(null);
   let isTransitioning = $state(false);
+  let segmentBuffers = $state<ArrayBuffer[]>([]);
+  let regeneratingIndex = $state<number | null>(null);
 
   let quotaDisplay = $state(getQuotaDisplay());
   let quotaColors = $state(getQuotaColors());
@@ -81,6 +83,16 @@ import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, form
       selectedQuality = settings.quality;
       selectedStyle = settings.style;
       await loadHistory();
+      // Prewarm the MediaPipe WASM runtime so the first local model load
+      // only pays the model-download cost, not WASM init (~1-3s on mobile).
+      if (settings.apiProvider === 'local') {
+        try {
+          const {preloadWasm} = await import('./lib/litert-lm');
+          await preloadWasm();
+        } catch {
+          // WASM prewarm is best-effort; loadModelFromCacheOrUrl retries it.
+        }
+      }
     })();
 
     window.addEventListener('popstate', handlePopState);
@@ -92,6 +104,34 @@ import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, form
 
   $effect(() => {
     if (settings.apiProvider !== 'local') return;
+
+    // Android: MediaPipe status is managed in-page (no Tauri events).
+    // Poll isModelReady() so the LOCAL AI badge stays accurate.
+    let cancelled = false;
+    if (isAndroid) {
+      (async () => {
+        try {
+          const {isModelReady} = await import('./lib/litert-lm');
+          if (!cancelled) {
+            localStatus = isModelReady() ? 'READY' : 'NOT RUNNING';
+          }
+        } catch {
+          if (!cancelled) localStatus = 'NOT RUNNING';
+        }
+      })();
+      const timer = setInterval(async () => {
+        try {
+          const {isModelReady} = await import('./lib/litert-lm');
+          if (!cancelled) localStatus = isModelReady() ? 'READY' : localStatus;
+        } catch {
+          // keep last status
+        }
+      }, 2000);
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+      };
+    }
 
     const unsubReady = onLocalLLMReady(() => {
       localStatus = 'READY';
@@ -124,6 +164,90 @@ import { getUsage, checkQuota, incrementUsage, getQuotaDisplay, resetQuota, form
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  /** Render one speaker segment to audio (Edge → HTTP → Web Speech). */
+  async function renderSegmentAudio(segment: SpeakerSegment, i: number): Promise<ArrayBuffer> {
+    const prosody = prosodyForSegment(settings.style, segment.speaker);
+    try {
+      return await ttsEdge(segment.text, {
+        voice: segment.voice,
+        rate: prosody.rate,
+        pitch: prosody.pitch,
+        volume: '+0%',
+      })
+    } catch (edgeErr) {
+      console.error(`Edge TTS failed for segment ${i}:`, edgeErr)
+      try {
+        const httpBlob = await ttsHttpFallback(segment.text, segment.voice)
+        addLog('generating-speech', `HTTP fallback succeeded for ${segment.speaker}`)
+        return await httpBlob.arrayBuffer()
+      } catch (httpErr) {
+        console.error(`HTTP TTS fallback failed for segment ${i}:`, httpErr)
+        if (!window.speechSynthesis) {
+          throw new Error(
+            `TTS unavailable for segment ${i} (Edge: ${edgeErr instanceof Error ? edgeErr.message : 'unknown error'}; HTTP: ${httpErr instanceof Error ? httpErr.message : 'unknown error'})`,
+            {cause: httpErr},
+          )
+        }
+        await ttsWebSpeech(segment.text, {
+          voice: segment.voice,
+          rate: prosody.rate,
+          pitch: prosody.pitch,
+        })
+        addLog('generating-speech', `Web Speech fallback used for ${segment.speaker}`)
+        return new ArrayBuffer(0)
+      }
+    }
+  }
+
+  /** Concat segment buffers into a playable MP3 blob URL. */
+  function mixSegmentBuffers(buffers: ArrayBuffer[]): {blob: Blob; url: string} {
+    const totalLength = buffers.reduce((sum, buf) => sum + buf.byteLength, 0)
+    const result = new Uint8Array(totalLength)
+    let offset = 0
+    for (const buf of buffers) {
+      result.set(new Uint8Array(buf), offset)
+      offset += buf.byteLength
+    }
+    const blob = new Blob([result], {type: 'audio/mp3'})
+    return {blob, url: URL.createObjectURL(blob)}
+  }
+
+  /** Re-render a single segment (bad pronunciation?) without redoing the episode. */
+  async function regenerateSegment(index: number) {
+    if (isGenerating || regeneratingIndex !== null) return;
+    const segment = speakerSegments[index];
+    if (!segment || !audioElement || !segmentBuffers[index]) return;
+
+    regeneratingIndex = index;
+    const wasPlaying = isPlaying;
+    const resumeTime = currentTime;
+    try {
+      if (!wasPlaying) audioElement.pause();
+      segmentBuffers[index] = await renderSegmentAudio(segment, index);
+      segmentBuffers = [...segmentBuffers];
+      const {blob, url} = mixSegmentBuffers(segmentBuffers);
+      audioElement.src = url;
+      audioElement.currentTime = Math.min(resumeTime, audioElement.duration || resumeTime);
+      if (wasPlaying || settings.autoPlay) {
+        await audioElement.play();
+        isPlaying = true;
+      }
+      if (currentEpisode?.id) {
+        currentEpisode = {...currentEpisode, audioUrl: url, duration: audioElement.duration || currentEpisode.duration};
+        try {
+          await updateEpisodeAudio(currentEpisode.id, blob, url);
+          await loadHistory();
+        } catch (dbErr) {
+          console.error('Failed to persist regenerated audio:', dbErr);
+        }
+      }
+    } catch (e: any) {
+      errorMessage = `Segment ${index + 1} konnte nicht neu generiert werden: ${e.message || 'TTS failed'}`;
+    } finally {
+      regeneratingIndex = null;
+    }
   }
 
   function updateStage(stage: GenerationStage, message: string) {
@@ -162,6 +286,8 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
   localGenerating = settings.apiProvider === 'local'
   errorMessage = ""
   currentScript = ""
+  segmentBuffers = []
+  regeneratingIndex = null
   generationStage = 'idle'
   generationProgress = 0
   generationLogs = []
@@ -190,14 +316,27 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
 
     updateStage('writing-script', 'Generating radio script...')
     addLog('writing-script', `Invoking LLM for topic: ${activeTopic}`)
-    const script = await invokeGenerateScript(activeTopic, settings, linkContent, mode, similarTopic)
+    let script: string
+    try {
+      script = await invokeGenerateScript(activeTopic, settings, linkContent, mode, similarTopic)
+    } catch (scriptErr) {
+      // Local AI (Android/MediaPipe) failed — e.g. no model loaded or WebGPU
+      // missing. Fall back to offline template text instead of aborting the
+      // whole episode (TTS still works offline via Web Speech).
+      if (settings.apiProvider === 'local') {
+        addLog('writing-script', `Local LLM failed, using fallback: ${scriptErr instanceof Error ? scriptErr.message : String(scriptErr)}`)
+        script = generateScriptFallback(activeTopic)
+      } else {
+        throw scriptErr
+      }
+    }
     currentScript = script
     addLog('writing-script', 'Script generated successfully')
     await sleep(300)
 
     updateStage('generating-speech', 'Parsing script into segments...')
     addLog('generating-speech', 'Analyzing script structure...')
-    const parsed = parseScriptToSegments(script, settings.style)
+    const parsed = parseScriptToSegments(script, settings.defaultVoice)
     parsedScript = parsed
     speakerSegments = parsed.segments
     transcriptLines = segmentsToTranscript(parsed.segments)
@@ -211,52 +350,14 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       const segmentProgress = Math.round(((i + 1) / speakerSegments.length) * 100)
       generationProgress = Math.round((GENERATING_SPEECH_STAGE_INDEX / STAGE_ORDER.length) * 100 + (segmentProgress / 100) * (100 / STAGE_ORDER.length))
       addLog('generating-speech', `Generating audio for ${segment.speaker} (${i + 1}/${speakerSegments.length})`)
-      try {
-        const buffer = await ttsEdge(segment.text, {
-          voice: segment.voice,
-          rate: '+0%',
-          pitch: '+0Hz',
-          volume: '+0%',
-        })
-        audioBuffers.push(buffer)
-      } catch (edgeErr) {
-        console.error(`Edge TTS failed for segment ${i}:`, edgeErr)
-        try {
-          const httpBlob = await ttsHttpFallback(segment.text, segment.voice)
-          const arrayBuffer = await httpBlob.arrayBuffer()
-          audioBuffers.push(arrayBuffer)
-          addLog('generating-speech', `HTTP fallback succeeded for ${segment.speaker}`)
-        } catch (httpErr) {
-          console.error(`HTTP TTS fallback failed for segment ${i}:`, httpErr)
-          if (!window.speechSynthesis) {
-            throw new Error(
-              `TTS unavailable for segment ${i} (Edge: ${edgeErr instanceof Error ? edgeErr.message : 'unknown error'}; HTTP: ${httpErr instanceof Error ? httpErr.message : 'unknown error'})`,
-              {cause: httpErr},
-            )
-          }
-          await ttsWebSpeech(segment.text, {
-            voice: segment.voice,
-            rate: '+0%',
-            pitch: '+0Hz',
-          })
-          audioBuffers.push(new ArrayBuffer(0))
-          addLog('generating-speech', `Web Speech fallback used for ${segment.speaker}`)
-        }
-      }
+      audioBuffers.push(await renderSegmentAudio(segment, i))
     }
+    segmentBuffers = audioBuffers;
     await sleep(200)
 
     updateStage('mixing-audio', 'Mixing audio segments...')
     addLog('mixing-audio', 'Concatenating audio buffers...')
-    const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.byteLength, 0)
-    const result = new Uint8Array(totalLength)
-    let offset = 0
-    for (const buf of audioBuffers) {
-      result.set(new Uint8Array(buf), offset)
-      offset += buf.byteLength
-    }
-    const audioBlob = new Blob([result], {type: 'audio/mp3'})
-    const audioUrl = URL.createObjectURL(audioBlob)
+    const {blob: audioBlob, url: audioUrl} = mixSegmentBuffers(audioBuffers)
     addLog('mixing-audio', 'Audio mixed successfully')
     await sleep(300)
 
@@ -289,6 +390,7 @@ async function tuneIn(mode?: 'deeper' | 'similar', similarTopic?: string) {
       topic: activeTopic,
       link: link || undefined,
       script,
+      audioBlob,
       audioUrl,
       duration: audioElement?.duration || 0,
       createdAt: new Date(),
@@ -395,8 +497,9 @@ async function handleSimilar() {
     transcriptLines = segmentsToTranscript(episode.speakerSegments || [])
     coverDataUrl = episode.coverDataUrl || null;
     currentEpisode = episode;
-    if (audioElement && episode.audioUrl) {
-      audioElement.src = episode.audioUrl;
+    const url = episode.audioUrl ?? (episode.audioBlob ? URL.createObjectURL(episode.audioBlob) : undefined);
+    if (audioElement && url) {
+      audioElement.src = url;
       await audioElement.play();
       isPlaying = true;
     }
@@ -773,6 +876,8 @@ async function handleSimilar() {
           audioElement={audioElement}
           episodeId={episodeHistory.find(e => e.script === currentScript)?.id || ''}
           episodeTitle={episodeHistory.find(e => e.script === currentScript)?.title || 'Current Episode'}
+          onRegenerate={regenerateSegment}
+          regeneratingIndex={regeneratingIndex}
         />
       {/if}
 
